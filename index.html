@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Playable Games</title>
+<style>
+  :root { --bg:#16122b; --card:#231d42; --text:#fff; --muted:#b9b2d8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:520px; margin:0 auto; padding:32px 16px 48px; }
+  h1 { font-size:34px; margin:0 0 6px; letter-spacing:-0.5px; }
+  p.sub { color:var(--muted); margin:0 0 28px; }
+  a.card { display:flex; align-items:center; gap:16px; background:var(--card); border-radius:22px; padding:16px; margin-bottom:14px; text-decoration:none; color:inherit; transition:transform .15s; }
+  a.card:active { transform:scale(.97); }
+  .icon { width:74px; height:74px; border-radius:18px; flex:none; display:grid; place-items:center; font-size:38px; }
+  .name { font-weight:800; font-size:20px; }
+  .desc { color:var(--muted); font-size:14px; margin-top:4px; line-height:1.35; }
+  .play { margin-left:auto; background:#2fae5a; color:#fff; font-weight:800; padding:10px 16px; border-radius:999px; font-size:14px; }
+  footer { color:var(--muted); font-size:13px; text-align:center; margin-top:28px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Playable Games</h1>
+  <p class="sub">Quick, one-finger games for your phone. Tap one to play.</p>
+
+  <a class="card" href="snowball-run/">
+    <div class="icon" style="background:linear-gradient(135deg,#9fd3f5,#2a7de1)">❄️</div>
+    <div><div class="name">Snowball Run</div><div class="desc">Steer a growing snowball and smash through the walls.</div></div>
+    <span class="play">PLAY</span>
+  </a>
+  <a class="card" href="burger-boss/">
+    <div class="icon" style="background:linear-gradient(135deg,#ffd9a8,#e8743b)">🍔</div>
+    <div><div class="name">Burger Boss</div><div class="desc">Cook, serve customers and grow your restaurant.</div></div>
+    <span class="play">PLAY</span>
+  </a>
+  <a class="card" href="pull-the-pin/">
+    <div class="icon" style="background:linear-gradient(135deg,#7b61ff,#3d3277)">📍</div>
+    <div><div class="name">Pull the Pin</div><div class="desc">Pull pins in the right order to fill the cup with gold.</div></div>
+    <span class="play">PLAY</span>
+  </a>
+  <a class="card" href="slime-eater/">
+    <div class="icon" style="background:linear-gradient(135deg,#b6ff8f,#2fa83b)">🟢</div>
+    <div><div class="name">Slime Eater</div><div class="desc">Eat smaller things, grow huge, swallow the house.</div></div>
+    <span class="play">PLAY</span>
+  </a>
+
+  <footer>By Raphael Etafo</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Pull the Pin</title>
+<style>
+  html,body{margin:0;height:100%;background:#2b2350;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+'use strict';
+const W = 420, H = 760;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let scale = 1, ox = 0, oy = 0, dpr = 1, vw = 0, vh = 0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  vw = innerWidth; vh = innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr;
+  cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
+  scale = Math.min(vw / W, vh / H);
+  ox = (vw - W * scale) / 2; oy = (vh - H * scale) / 2;
+}
+addEventListener('resize', resize); resize();
+const toGame = e => ({ x: (e.clientX - ox) / scale, y: (e.clientY - oy) / scale });
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2); ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function text(t, x, y, size, color, align = 'center', stroke = null, weight = 900) {
+  ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (stroke) { ctx.lineWidth = size * 0.2; ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); }
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+
+// ---------- levels ----------
+// pins: [handleX, handleY, endX, endY]; the pin slides out toward its handle.
+const CUP = { x1: 150, x2: 270, top: 575 };
+const COMMON_WALLS = [
+  [6, 0, 6, 760], [414, 0, 414, 760], [0, 752, 420, 752],
+  [135, 560, 150, 742], [150, 742, 270, 742], [270, 742, 285, 560],
+];
+const LEVELS = [
+  {
+    hint: 'Pull the pin to drop the gold into the cup!',
+    walls: [[100, 140, 180, 320], [320, 140, 240, 320]],
+    pins: [[345, 332, 160, 332]],
+    spawn: [['gold', 125, 295, 40, 115]],
+  },
+  {
+    hint: 'Only gold may go in the cup. Lava burns it!',
+    walls: [[30, 140, 157, 336], [205, 110, 205, 336], [215, 110, 215, 336], [390, 140, 263, 336]],
+    pins: [[60, 342, 210, 342], [360, 342, 220, 342]],
+    spawn: [['gold', 55, 190, 40, 100], ['lava', 230, 375, 40, 100]],
+  },
+  {
+    hint: 'Water turns lava into harmless stone.',
+    walls: [[30, 110, 125, 280], [205, 110, 178, 280], [215, 110, 242, 280], [390, 110, 295, 280],
+            [90, 360, 170, 470], [330, 360, 250, 470]],
+    pins: [[95, 292, 200, 292], [335, 292, 225, 292], [325, 482, 150, 482]],
+    spawn: [['gold', 70, 145, 30, 90], ['water', 255, 330, 30, 75], ['lava', 150, 240, 368, 383]],
+  },
+  {
+    hint: 'Think before you pull. Order matters!',
+    walls: [[170, 150, 170, 525], [250, 150, 250, 312], [250, 400, 250, 525],
+            [265, 90, 310, 230], [412, 90, 360, 230], [395, 262, 238, 352]],
+    pins: [[118, 307, 265, 307], [118, 527, 265, 527], [400, 242, 295, 242]],
+    spawn: [['gold', 182, 242, 175, 250], ['lava', 182, 242, 430, 460], ['water', 285, 375, 100, 145]],
+  },
+];
+
+const R = 7, T = 5, G = 1500, STEP = 1 / 240;
+let levelIdx = 0;
+try { levelIdx = clamp(parseInt(localStorage.getItem('pullpin_level')) || 0, 0, LEVELS.length - 1); } catch (e) {}
+const save = () => { try { localStorage.setItem('pullpin_level', levelIdx); } catch (e) {} };
+
+let balls, walls, pins, state, need, goldTotal, endT, msgT, simTime, winHoldT, failReason;
+let particles = [];
+
+function loadLevel(i) {
+  const L = LEVELS[i];
+  walls = COMMON_WALLS.concat(L.walls);
+  pins = L.pins.map(([hx, hy, ex, ey]) => {
+    const dx = hx - ex, dy = hy - ey, len = Math.hypot(dx, dy);
+    return { hx, hy, ex, ey, dx: dx / len, dy: dy / len, len, off: 0, pulling: false, gone: false };
+  });
+  balls = [];
+  for (const [type, x0, x1, y0, y1] of L.spawn) {
+    for (let y = y0; y <= y1; y += 15) for (let x = x0; x <= x1; x += 15)
+      balls.push({ x: x + rnd(-1, 1), y, px: x, py: y, vx: 0, vy: 0, type, fresh: 0 });
+  }
+  goldTotal = balls.filter(b => b.type === 'gold').length;
+  need = Math.ceil(goldTotal * 0.6);
+  particles = [];
+  for (let k = 0; k < 700; k++) physics(STEP, true);
+  balls.forEach(b => { b.vx = 0; b.vy = 0; });
+  state = 'play'; endT = 0; msgT = 0; simTime = 0; winHoldT = 0; failReason = '';
+}
+
+// ---------- physics ----------
+function pinSeg(p) { return [p.hx + p.dx * p.off, p.hy + p.dy * p.off, p.ex + p.dx * p.off, p.ey + p.dy * p.off]; }
+
+function collideSeg(b, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy, min = R + T;
+  const tr = ((b.x - x1) * dx + (b.y - y1) * dy) / L2;
+  if (tr > 0 && tr < 1) {
+    // side-aware: keep the ball on the side it came from, so heavy stacks can't push through
+    const L = Math.sqrt(L2);
+    let nx = -dy / L, ny = dx / L;
+    const d = (b.x - x1) * nx + (b.y - y1) * ny;
+    if (Math.abs(d) >= min && Math.sign(d) === Math.sign((b.px - x1) * nx + (b.py - y1) * ny)) return;
+    const side = ((b.px - x1) * nx + (b.py - y1) * ny) >= 0 ? 1 : -1;
+    if (side * d >= min) return;
+    const push = side * min - d;
+    b.x += nx * push; b.y += ny * push;
+    nx *= side; ny *= side;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) { b.vx -= 1.15 * vn * nx; b.vy -= 1.15 * vn * ny; b.vx *= 0.99; b.vy *= 0.99; }
+    return;
+  }
+  const t = clamp(tr, 0, 1);
+  const px = x1 + dx * t, py = y1 + dy * t;
+  let nx = b.x - px, ny = b.y - py;
+  const d = Math.hypot(nx, ny);
+  if (d < min && d > 1e-6) {
+    nx /= d; ny /= d;
+    b.x += nx * (min - d); b.y += ny * (min - d);
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) { b.vx -= 1.15 * vn * nx; b.vy -= 1.15 * vn * ny; b.vx *= 0.99; b.vy *= 0.99; }
+  }
+}
+
+function react(a, b) {
+  if (a.type === b.type) return;
+  const pair = (p, q) => (a.type === p && b.type === q) ? [a, b] : (a.type === q && b.type === p) ? [b, a] : null;
+  let m;
+  if ((m = pair('gold', 'lava'))) { m[0].type = 'stone'; m[0].fresh = 0; puff(m[0].x, m[0].y, '#ff9f43'); }
+  else if ((m = pair('water', 'lava'))) { m[1].type = 'stone'; m[1].fresh = 0.25; puff(m[1].x, m[1].y, '#e8f4ff'); }
+  else if ((m = pair('stone', 'lava')) && m[0].fresh > 0) { m[1].type = 'stone'; m[1].fresh = 0.25; puff(m[1].x, m[1].y, '#e8f4ff'); }
+}
+function puff(x, y, color) {
+  if (particles.length > 200) return;
+  for (let i = 0; i < 3; i++) particles.push({ x, y, vx: rnd(-40, 40), vy: rnd(-90, -30), life: rnd(0.4, 0.8), color, r: rnd(3, 6) });
+}
+
+const grid = new Map();
+function physics(dt, quiet) {
+  for (const b of balls) {
+    b.px = b.x; b.py = b.y;
+    b.vy += G * dt;
+    b.vx *= 0.9995; b.vy *= 0.9995;
+    const sp = Math.hypot(b.vx, b.vy);
+    if (sp > 850) { b.vx *= 850 / sp; b.vy *= 850 / sp; }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.fresh > 0) b.fresh -= dt;
+  }
+  // ball-ball
+  grid.clear();
+  const C = 16;
+  balls.forEach((b, i) => {
+    const k = ((b.x / C) | 0) + ',' + ((b.y / C) | 0);
+    let cell = grid.get(k); if (!cell) grid.set(k, cell = []); cell.push(i);
+  });
+  for (let i = 0; i < balls.length; i++) {
+    const a = balls[i], cx = (a.x / C) | 0, cy = (a.y / C) | 0;
+    for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
+      const cell = grid.get(gx + ',' + gy); if (!cell) continue;
+      for (const j of cell) {
+        if (j <= i) continue;
+        const b = balls[j];
+        let dx = b.x - a.x, dy = b.y - a.y; const d2 = dx * dx + dy * dy;
+        if (d2 < 4 * R * R && d2 > 1e-8) {
+          const d = Math.sqrt(d2); dx /= d; dy /= d;
+          const push = (2 * R - d) * 0.5;
+          a.x -= dx * push; a.y -= dy * push; b.x += dx * push; b.y += dy * push;
+          const rv = (b.vx - a.vx) * dx + (b.vy - a.vy) * dy;
+          if (rv < 0) { const imp = -rv * 0.52; a.vx -= imp * dx; a.vy -= imp * dy; b.vx += imp * dx; b.vy += imp * dy; }
+          if (!quiet) react(a, b);
+        }
+      }
+    }
+  }
+  for (const b of balls) {
+    for (const w of walls) collideSeg(b, w[0], w[1], w[2], w[3]);
+    for (const p of pins) if (!p.gone) { const s = pinSeg(p); collideSeg(b, s[0], s[1], s[2], s[3]); }
+  }
+}
+
+const inCup = b => b.x > CUP.x1 && b.x < CUP.x2 && b.y > CUP.top;
+
+// ---------- input ----------
+cv.addEventListener('pointerdown', e => {
+  const p = toGame(e);
+  if (state === 'win' || state === 'fail') {
+    if (msgT < 0.5) return;
+    if (state === 'win') { levelIdx = (levelIdx + 1) % LEVELS.length; save(); }
+    loadLevel(levelIdx); return;
+  }
+  if (state === 'menu') { loadLevel(levelIdx); return; }
+  // restart button
+  if (p.x > W - 74 && p.y < 74) { loadLevel(levelIdx); return; }
+  let best = null, bd = 34;
+  for (const pin of pins) {
+    if (pin.gone || pin.pulling) continue;
+    const [x1, y1, x2, y2] = pinSeg(pin);
+    const dx = x2 - x1, dy = y2 - y1;
+    const t = clamp(((p.x - x1) * dx + (p.y - y1) * dy) / (dx * dx + dy * dy), 0, 1);
+    let d = Math.hypot(p.x - (x1 + dx * t), p.y - (y1 + dy * t));
+    d = Math.min(d, Math.hypot(p.x - x1, p.y - y1) * 0.7);
+    if (d < bd) { bd = d; best = pin; }
+  }
+  if (best) best.pulling = true;
+});
+
+// ---------- update ----------
+let acc = 0;
+function update(dt) {
+  particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; });
+  particles = particles.filter(p => p.life > 0);
+  if (state === 'menu') return;
+  msgT += dt;
+  if (state !== 'play' && msgT > 2.5) return;
+  for (const p of pins) if (p.pulling && !p.gone) { p.off += 1300 * dt; if (p.off > p.len + 30) p.gone = true; }
+  acc += dt;
+  while (acc >= STEP) { physics(STEP, false); acc -= STEP; }
+  if (state !== 'play') return;
+  simTime += dt;
+
+  const lavaIn = balls.some(b => b.type === 'lava' && inCup(b));
+  const goldIn = balls.filter(b => b.type === 'gold' && inCup(b)).length;
+  const goldLeft = balls.filter(b => b.type === 'gold').length;
+  const moving = balls.some(b => Math.abs(b.vx) + Math.abs(b.vy) > 40);
+  const anyPulled = pins.some(p => p.pulling);
+
+  if (lavaIn) { state = 'fail'; failReason = 'Lava fell in the cup!'; msgT = 0; return; }
+  if (goldIn >= need) {
+    winHoldT += dt;
+    if (!moving || winHoldT > 2) { state = 'win'; msgT = 0; burstWin(); return; }
+  } else winHoldT = 0;
+  if (goldLeft < need) {
+    endT += dt; if (endT > 1.2) { state = 'fail'; failReason = 'Too much gold turned to stone!'; msgT = 0; }
+  } else if (anyPulled && pins.every(p => p.gone) && !moving) {
+    endT += dt; if (endT > 0.8) { state = 'fail'; failReason = 'Not enough gold in the cup.'; msgT = 0; }
+  } else endT = 0;
+}
+function burstWin() {
+  for (let i = 0; i < 60; i++) particles.push({ x: W / 2 + rnd(-60, 60), y: 600, vx: rnd(-200, 200), vy: rnd(-450, -150), life: rnd(0.8, 1.5), color: ['#ffd23f', '#ff6b9a', '#4ecdc4', '#ffffff'][i % 4], r: rnd(3, 6), grav: true });
+}
+
+// ---------- draw ----------
+const BALL_COL = {
+  gold: ['#fff6b0', '#ffcc00', '#c98a00'],
+  lava: ['#ffe0a0', '#ff5a1f', '#b3200a'],
+  water: ['#d8f1ff', '#3fa9f5', '#1d6fb8'],
+  stone: ['#c9ced6', '#7d8794', '#4f5762'],
+};
+const ballSprites = {};
+function makeSprite(type) {
+  const c = document.createElement('canvas'), s = 32; c.width = c.height = s;
+  const g = c.getContext('2d'), col = BALL_COL[type];
+  const gr = g.createRadialGradient(s * 0.38, s * 0.35, 1, s / 2, s / 2, s / 2);
+  gr.addColorStop(0, col[0]); gr.addColorStop(0.45, col[1]); gr.addColorStop(1, col[2]);
+  g.fillStyle = gr; g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 1, 0, 7); g.fill();
+  return c;
+}
+['gold', 'lava', 'water', 'stone'].forEach(t => ballSprites[t] = makeSprite(t));
+
+function drawWall(w) {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#6d7fb8'; ctx.lineWidth = T * 2 + 4; ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.stroke();
+  ctx.strokeStyle = '#c4d2f5'; ctx.lineWidth = T * 2 - 2; ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.stroke();
+}
+
+function drawPin(p) {
+  if (p.gone) return;
+  const [x1, y1, x2, y2] = pinSeg(p);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#5b5f6b'; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.strokeStyle = '#e3e6ee'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const pulse = p.pulling ? 0 : Math.sin(perfT * 5) * 1.5;
+  ctx.fillStyle = '#5b5f6b'; ctx.beginPath(); ctx.arc(x1, y1, 15 + pulse, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffb703'; ctx.beginPath(); ctx.arc(x1, y1, 11 + pulse, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(x1 - 3, y1 - 3, 4, 0, 7); ctx.fill();
+}
+
+let perfT = 0;
+function draw(dt) {
+  perfT += dt;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#2b2350'; ctx.fillRect(0, 0, vw, vh);
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * ox, dpr * oy);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#3d3277'); bg.addColorStop(1, '#5a4aa8');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  for (let i = 0; i < 12; i++) { ctx.beginPath(); ctx.arc((i * 97) % W, (i * 173) % H, 30 + (i % 3) * 20, 0, 7); ctx.fill(); }
+
+  if (state === 'menu') { drawMenu(); return; }
+
+  // cup glow
+  const goldIn = balls.filter(b => b.type === 'gold' && inCup(b)).length;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath(); ctx.moveTo(135, 560); ctx.lineTo(150, 742); ctx.lineTo(270, 742); ctx.lineTo(285, 560); ctx.closePath(); ctx.fill();
+
+  walls.slice(3).forEach(drawWall);
+  // balls
+  for (const b of balls) ctx.drawImage(ballSprites[b.type], b.x - R - 0.5, b.y - R - 0.5, R * 2 + 1, R * 2 + 1);
+  pins.forEach(drawPin);
+  for (const p of particles) {
+    if (p.grav) p.vy += 600 * dt;
+    ctx.globalAlpha = clamp(p.life, 0, 1); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // cup counter
+  const ok = goldIn >= need;
+  rr(W / 2 - 50, 515, 100, 34, 17); ctx.fillStyle = ok ? '#2fae5a' : 'rgba(0,0,0,0.35)'; ctx.fill();
+  text(goldIn + ' / ' + need, W / 2, 533, 18, '#ffd23f');
+
+  // HUD
+  rr(14, 14, 120, 42, 21); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fill();
+  text('LEVEL ' + (levelIdx + 1), 74, 36, 18, '#fff');
+  rr(W - 62, 14, 48, 42, 21); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(W - 38, 35, 10, -0.3, Math.PI * 1.5); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(W - 38, 19); ctx.lineTo(W - 31, 25); ctx.lineTo(W - 39, 30); ctx.fill();
+  if (state === 'play' && !pins.some(p => p.pulling)) text(LEVELS[levelIdx].hint, W / 2, 76, 15, '#ffffff', 'center', null, 700);
+
+  if (state === 'win') panel('AMAZING!', levelIdx + 1 >= LEVELS.length ? 'You beat every level!' : 'Level ' + (levelIdx + 1) + ' complete', true);
+  if (state === 'fail') panel('OOPS!', failReason, false);
+}
+
+function panel(title, sub, win) {
+  const a = clamp((msgT - 0.6) * 3, 0, 1);
+  if (a <= 0) return;
+  ctx.globalAlpha = a * 0.6; ctx.fillStyle = '#140f2b'; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = a;
+  const y = 240 + (1 - a) * 30;
+  rr(45, y, 330, 230, 28); ctx.fillStyle = '#fff'; ctx.fill();
+  text(title, W / 2, y + 60, 40, win ? '#ffb703' : '#e74c3c', 'center', null);
+  text(sub, W / 2, y + 108, 17, '#4a4470', 'center', null, 700);
+  const pulse = 1 + Math.sin(perfT * 5) * 0.03;
+  ctx.save(); ctx.translate(W / 2, y + 172); ctx.scale(pulse, pulse);
+  rr(-110, -27, 220, 54, 27); ctx.fillStyle = win ? '#2fae5a' : '#7b61ff'; ctx.fill();
+  text(win ? 'NEXT LEVEL' : 'TRY AGAIN', 0, 1, 20, '#fff'); ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function drawMenu() {
+  text('PULL', W / 2, 170, 70, '#ffd23f', 'center', '#7a4b00');
+  text('THE PIN', W / 2, 245, 56, '#ffffff', 'center', '#3d3277');
+  // demo illustration
+  for (let i = 0; i < 18; i++) { const x = 170 + (i % 6) * 16, y = 330 + Math.floor(i / 6) * 15; ctx.drawImage(ballSprites.gold, x - R, y - R, R * 2, R * 2); }
+  const off = (Math.sin(perfT * 2) * 0.5 + 0.5) * 40;
+  drawPin({ hx: 300 + off, hy: 385, ex: 140 + off, ey: 385, dx: 1, dy: 0, off: 0, gone: false, pulling: true });
+  text('Pull the pins in the right order', W / 2, 470, 18, '#fff', 'center', null, 700);
+  text('to fill the cup with gold!', W / 2, 496, 18, '#fff', 'center', null, 700);
+  const pulse = 1 + Math.sin(perfT * 5) * 0.04;
+  ctx.save(); ctx.translate(W / 2, 600); ctx.scale(pulse, pulse);
+  rr(-120, -30, 240, 60, 30); ctx.fillStyle = '#2fae5a'; ctx.fill();
+  text('TAP TO PLAY', 0, 1, 24, '#fff'); ctx.restore();
+}
+
+state = 'menu';
+// small debug hook used by automated tests
+window.__pullpin = {
+  state: () => state, level: () => levelIdx, load: i => { levelIdx = i; loadLevel(i); },
+  pull: i => { pins[i].pulling = true; },
+  counts: () => { const c = {}; balls.forEach(b => c[b.type] = (c[b.type] || 0) + 1); c.goldIn = balls.filter(b => b.type === 'gold' && inCup(b)).length; c.need = need; return c; },
+};
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.033, (now - last) / 1000); last = now;
+  update(dt); draw(dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
