@@ -8,7 +8,7 @@ Each game lives in its own folder as a single `index.html` and runs in any moder
 
 | Game | Type | How to play |
 |------|------|-------------|
-| [Snowball Run](snowball-run/) | Runner | Drag left/right to steer a growing snowball through gates, rocks and trees, then smash the walls at the end. |
+| [Snowball Run](snowball-run/) | Runner | Drag left/right to steer a growing snowball through gates, rocks and trees, then smash the walls at the end. Endless levels, coins, upgrades shop, unlockable skins, 4 scenery themes. |
 | [Burger Boss](burger-boss/) | Tycoon | Tap stations to cook, serve customers, then upgrade, hire chefs and open new counters. |
 | [Pull the Pin](pull-the-pin/) | Puzzle | Pull pins in the right order to fill the cup with gold. Keep lava out; water turns lava to stone. |
 | [Slime Eater](slime-eater/) | Growth | Drag to move. Eat anything smaller than you and grow until you can swallow the house. |
