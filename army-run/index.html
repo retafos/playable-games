@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Army Run</title>
+<style>
+  html,body{margin:0;height:100%;background:#cdebc0;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+'use strict';
+const W = 420, H = 760, TL = 40, TR = 380, MID = 210, CY = 600;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let scale = 1, ox = 0, oy = 0, dpr = 1, vw = 0, vh = 0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2); vw = innerWidth; vh = innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr; cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
+  scale = Math.min(vw / W, vh / H); ox = (vw - W * scale) / 2; oy = (vh - H * scale) / 2;
+}
+addEventListener('resize', resize); resize();
+const toGame = e => ({ x: (e.clientX - ox) / scale, y: (e.clientY - oy) / scale });
+const EXT = () => ({ x: -ox / scale - 2, y: -oy / scale - 2, w: vw / scale + 4, h: vh / scale + 4 });
+const rnd = (a, b) => a + Math.random() * (b - a), ri = (a, b) => Math.floor(rnd(a, b + 1));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'K' : String(Math.floor(n));
+function rr(x, y, w, h, r) { r = Math.max(0, Math.min(r, w / 2, h / 2)); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function text(t, x, y, size, color, align = 'center', stroke = null, weight = 900) {
+  ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (stroke) { ctx.lineWidth = size * 0.18; ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); }
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+function coinIcon(x, y, r) {
+  ctx.fillStyle = '#e09b00'; ctx.beginPath(); ctx.arc(x, y + r * 0.12, r, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffc93c'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffe48a'; ctx.beginPath(); ctx.arc(x, y, r * 0.62, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e8a700'; ctx.fillRect(x - r * 0.12, y - r * 0.38, r * 0.24, r * 0.76);
+}
+function star(x, y, r, on) {
+  ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r * 0.45 : r; ctx.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad); }
+  ctx.closePath(); ctx.fillStyle = on ? '#ffc93c' : 'rgba(0,0,0,0.12)'; ctx.fill(); if (on) { ctx.strokeStyle = '#e09b00'; ctx.lineWidth = 3; ctx.stroke(); }
+}
+
+// ---------- save ----------
+let save = { level: 1, coins: 0, up: { army: 0, armor: 0, coin: 0 }, muted: false };
+try { const s = JSON.parse(localStorage.getItem('armyrun_v1') || 'null'); if (s) save = Object.assign(save, s, { up: Object.assign(save.up, s.up || {}) }); } catch (e) {}
+const persist = () => { try { localStorage.setItem('armyrun_v1', JSON.stringify(save)); } catch (e) {} };
+const UPS = [
+  { id: 'army', name: 'Start Army', desc: l => 'Start with ' + startArmy(l), base: 40 },
+  { id: 'armor', name: 'Armor', desc: l => '+' + l * 10 + '% strength', base: 60 },
+  { id: 'coin', name: 'Coin Value', desc: l => coinValue(l) + ' per coin', base: 60 },
+];
+const startArmy = l => 5 + l * 3, coinValue = l => 1 + l, MAX_UP = 25;
+const upCost = (u, l) => Math.round(u.base * Math.pow(1.42, l) / 5) * 5;
+
+// ---------- sound ----------
+let actx = null;
+function audio() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (actx && actx.state === 'suspended') actx.resume(); }
+function tone(f, d = 0.1, type = 'sine', v = 0.12, slide = 0, delay = 0) {
+  if (save.muted || !actx) return; const t0 = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t0 + d);
+  g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + d); o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + d + 0.02);
+}
+const SFX = {
+  coin: () => tone(1320, 0.06, 'square', 0.04), good: () => { tone(520, 0.12, 'triangle', 0.14, 300); tone(780, 0.12, 'triangle', 0.1, 300, 0.06); },
+  bad: () => tone(300, 0.25, 'sawtooth', 0.07, -180), hit: () => tone(rnd(160, 260), 0.05, 'square', 0.03),
+  saw: () => tone(900, 0.15, 'sawtooth', 0.05, -500), step: () => tone(400 + rnd(0, 200), 0.08, 'triangle', 0.08),
+  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.13, 0, i * 0.09)),
+  fail: () => [392, 330, 262].forEach((f, i) => tone(f, 0.22, 'triangle', 0.11, 0, i * 0.12)),
+  click: () => tone(880, 0.05, 'square', 0.05), buy: () => { tone(660, 0.08, 'square', 0.07); tone(990, 0.12, 'square', 0.07, 0, 0.07); },
+};
+const buzz = ms => { try { if (!save.muted && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
+
+// ---------- soldier sprites ----------
+function makeSoldier(body, dark, helmet) {
+  const c = document.createElement('canvas'); c.width = c.height = 24; const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,0.18)'; g.beginPath(); g.ellipse(12, 19, 7, 3, 0, 0, 7); g.fill();
+  g.fillStyle = dark; g.beginPath(); g.arc(12, 13, 7, 0, 7); g.fill();
+  g.fillStyle = body; g.beginPath(); g.arc(12, 12, 6, 0, 7); g.fill();
+  g.fillStyle = helmet; g.beginPath(); g.arc(12, 9, 4.5, Math.PI, 0); g.fill(); g.fillRect(7.5, 8.5, 9, 2);
+  g.fillStyle = '#ffe0bd'; g.beginPath(); g.arc(12, 12, 2.6, 0, 7); g.fill();
+  return c;
+}
+const BLUE = makeSoldier('#3a8dff', '#1d4f9e', '#2b6a3f'), RED = makeSoldier('#ff4d4d', '#9e1d1d', '#5a1414');
+const FORM = []; for (let i = 0; i < 400; i++) { const r = 5.2 * Math.sqrt(i), a = i * 2.39996; FORM.push([Math.cos(a) * r, Math.sin(a) * r * 0.8]); }
+const crowdR = n => 5.2 * Math.sqrt(Math.min(n, 400)) + 8;
+
+// ---------- run ----------
+let state = 'menu', dist = 0, army = 0, armyX = MID, targetX = MID, items = [], deco = [], steps = [], finishD = 1, speed = 0;
+let fight = null, stopped = false, endT = 0, climbed = 0, runCoins = 0, payout = 0, mult = 1, stars = 0, playT = 0, killAcc = 0;
+let particles = [], popups = [], shake = 0, overlayT = 0, time = 0, hits = [];
+
+function spreadXs(n) { const slot = (TR - TL) / n, xs = []; for (let i = 0; i < n; i++) xs.push(TL + slot * i + rnd(slot * 0.3, slot * 0.7)); return xs; }
+function buildLevel() {
+  const d = save.level, hard = Math.min(d, 40);
+  items = []; deco = []; steps = [];
+  const L = 2600 + Math.min(d, 20) * 140;
+  // track the army a good player would have, so every level is beatable
+  let exp = startArmy(save.up.army);
+  const apply = (g, n) => g.op === '+' ? n + g.v : g.op === 'x' ? n * g.v : g.op === '−' ? n - g.v : Math.ceil(n / g.v);
+  const coinLine = (cx, start, n) => { for (let i = 0; i < n; i++) items.push({ type: 'coin', d: start + i * 32, x: cx, hit: false }); };
+  const first = { op: '+', v: ri(8, 15) }, second = { op: 'x', v: 2 };
+  items.push({ type: 'gate', d: 380, left: first, right: second, used: false });
+  exp = Math.max(apply(first, exp), apply(second, exp));
+  let y = 680, last = 'gate';
+  const tough = Math.min(0.75, 0.38 + hard * 0.012);
+  while (y < L) {
+    let t = Math.random();
+    if (last === 'gate' && t < 0.42) t = 0.5;
+    if (last === 'enemy' && t >= 0.42 && t < 0.66) t = 0.2;
+    if (t < 0.42) {
+      const good = () => (Math.random() < 0.3 && exp < 400) ? { op: 'x', v: (d >= 4 && Math.random() < 0.3) ? 3 : 2 } : { op: '+', v: ri(5, 12 + hard * 2) };
+      const bad = () => (d >= 3 && Math.random() < 0.25) ? { op: '÷', v: 2 } : { op: '−', v: Math.max(3, Math.round(exp * rnd(0.2, 0.5))) };
+      let a = good(), b = Math.random() < 0.65 ? bad() : good();
+      if (Math.random() < 0.5) [a, b] = [b, a];
+      items.push({ type: 'gate', d: y, left: a, right: b, used: false });
+      exp = Math.max(apply(a, exp), apply(b, exp));
+      y += ri(250, 300); last = 'gate';
+    } else if (t < 0.66) {
+      const n = Math.max(3, Math.round(exp * rnd(tough - 0.15, tough)));
+      items.push({ type: 'enemy', d: y + 40, x: rnd(TL + 70, TR - 70), n, start: n, done: false });
+      exp -= n / (1 + save.up.armor * 0.1);
+      y += ri(300, 350); last = 'enemy';
+    } else if (t < 0.82) {
+      const n = d < 3 ? 1 : ri(1, 2);
+      spreadXs(n).forEach(x => items.push({ type: 'saw', d: y, x, done: false, sweep: d >= 5 && Math.random() < 0.5, ph: rnd(0, 6) }));
+      exp *= 0.9;
+      coinLine(rnd(TL + 40, TR - 40), y + 60, 5);
+      y += ri(240, 290); last = 'saw';
+    } else {
+      coinLine(rnd(TL + 50, TR - 50), y, 8);
+      y += ri(280, 320); last = 'coin';
+    }
+  }
+  finishD = L + 250;
+  const cost = Math.max(2, Math.round(exp / 14));
+  for (let i = 0; i < 20; i++) steps.push({ d: finishD + 150 + i * 62, cost, m: 1 + (i + 1) * 0.5 });
+  for (let dd = 0; dd < finishD + 1800; dd += ri(60, 120)) { deco.push({ d: dd, x: rnd(6, TL - 10), s: rnd(0.7, 1.1) }); deco.push({ d: dd + 40, x: rnd(TR + 10, W - 6), s: rnd(0.7, 1.1) }); }
+}
+function startRun() {
+  buildLevel(); dist = 0; army = startArmy(save.up.army); armyX = MID; targetX = MID; speed = 230 + Math.min(save.level, 15) * 4;
+  fight = null; stopped = false; endT = 0; climbed = 0; runCoins = 0; payout = 0; mult = 1; stars = 0; playT = 0; killAcc = 0;
+  particles = []; popups = []; shake = 0; overlayT = 0; state = 'play';
+}
+function finishRun(won) {
+  overlayT = 0;
+  if (won) { mult = climbed ? steps[climbed - 1].m : 1; payout = Math.round(runCoins * mult) + 10 + save.level * 3; stars = climbed >= 10 ? 3 : climbed >= 4 ? 2 : 1; state = 'result'; SFX.win(); }
+  else { payout = runCoins; state = 'fail'; SFX.fail(); buzz(120); }
+}
+function collect() { save.coins += payout; if (state === 'result') save.level++; persist(); state = 'menu'; overlayT = 0; }
+
+// ---------- input ----------
+let dragging = false, dsx = 0, bsx = 0;
+cv.addEventListener('pointerdown', e => {
+  audio(); const p = toGame(e);
+  if (state === 'play') { dragging = true; dsx = p.x; bsx = targetX; return; }
+  for (let i = hits.length - 1; i >= 0; i--) { const h = hits[i]; if (p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h) { h.fn(); return; } }
+});
+cv.addEventListener('pointermove', e => { if (!dragging || state !== 'play') return; const p = toGame(e); targetX = clamp(bsx + (p.x - dsx) * 1.3, TL + 10, TR - 10); });
+addEventListener('pointerup', () => dragging = false); addEventListener('pointercancel', () => dragging = false);
+addEventListener('keydown', e => {
+  audio();
+  if (state === 'play') { if (e.key === 'ArrowLeft') targetX = clamp(targetX - 40, TL + 10, TR - 10); if (e.key === 'ArrowRight') targetX = clamp(targetX + 40, TL + 10, TR - 10); }
+  else if (e.key === ' ' || e.key === 'Enter') { if (state === 'menu') startRun(); else if (overlayT > 0.6) collect(); }
+});
+
+function burst(x, y, color, n, power = 200) { for (let i = 0; i < n; i++) { const a = rnd(0, 7), sp = rnd(power * 0.3, power); particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life: rnd(0.3, 0.7), max: 0.7, r: rnd(2, 4), color }); } }
+function popup(txt, x, y, color, sz = 26) { popups.push({ txt, x, y, color, sz, life: 1 }); }
+
+// ---------- update ----------
+function update(dt) {
+  time += dt; overlayT += dt;
+  particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; p.life -= dt; }); particles = particles.filter(p => p.life > 0);
+  popups.forEach(p => { p.y -= 60 * dt; p.life -= dt; }); popups = popups.filter(p => p.life > 0);
+  shake = Math.max(0, shake - dt * 30);
+  if (state !== 'play') return;
+  playT += dt;
+  const cr = crowdR(army);
+  const lo = TL + Math.min(cr, (TR - TL) / 2), hi = TR - Math.min(cr, (TR - TL) / 2);
+  armyX += (clamp(targetX, lo, hi) - armyX) * Math.min(1, dt * 10);
+
+  if (fight) {
+    const e = fight, rate = Math.max(10, (army + e.n) * 1.2);
+    killAcc += rate * dt;
+    const str = 1 + save.up.armor * 0.1;
+    while (killAcc >= 1 && e.n > 0 && army > 0) {
+      killAcc -= 1; e.n -= 1;
+      army -= 1 / str;
+      if (Math.random() < 0.35) SFX.hit();
+      burst(rnd(e.x - 20, e.x + 20), CY - (e.d - dist) + rnd(-10, 10), Math.random() < 0.5 ? '#ff4d4d' : '#3a8dff', 2, 120);
+    }
+    army = Math.max(0, army);
+    if (army < 0.5) { army = 0; finishRun(false); return; }
+    if (e.n <= 0) { e.done = true; fight = null; popup('VICTORY!', armyX, CY - 80, '#ffd23f', 24); SFX.good(); army = Math.round(army); }
+    return;
+  }
+
+  if (!stopped) dist += speed * dt;
+
+  for (const it of items) {
+    if (it.hit || it.used || it.done) continue;
+    const sy = CY - (it.d - dist);
+    if (sy < -120 || sy > H + 120) continue;
+    if (it.type === 'gate' && dist >= it.d) {
+      it.used = true; const g = armyX < MID ? it.left : it.right; it.chosen = armyX < MID ? 'left' : 'right';
+      const before = army;
+      if (g.op === '+') army += g.v; else if (g.op === '−') army -= g.v; else if (g.op === 'x') army *= g.v; else army = Math.ceil(army / g.v);
+      army = Math.max(0, Math.round(army));
+      const delta = army - before;
+      popup((delta >= 0 ? '+' : '') + delta, armyX, CY - cr - 40, delta >= 0 ? '#2f8cff' : '#ff4d4d');
+      if (delta >= 0) SFX.good(); else { SFX.bad(); buzz(40); }
+    } else if (it.type === 'coin' && Math.abs(it.x - armyX) < cr + 10 && Math.abs(sy - CY) < cr * 0.8 + 10) {
+      it.hit = true; runCoins += coinValue(save.up.coin); SFX.coin();
+    } else if (it.type === 'saw' && dist >= it.d) {
+      it.done = true;
+      const sx = it.sweep ? it.x + Math.sin(time * 2 + it.ph) * 60 : it.x;
+      let k = 0; const n = Math.min(army, 400);
+      for (let i = 0; i < n; i++) if (Math.abs(armyX + FORM[i][0] - sx) < 24) k++;
+      if (army > 400) k = Math.round(k * army / 400);
+      if (k > 0) { army -= k; popup('−' + k, sx, CY - 30, '#ff4d4d'); burst(sx, CY, '#3a8dff', 12); SFX.saw(); shake = 6; buzz(40); }
+    } else if (it.type === 'enemy') {
+      const er = crowdR(it.n);
+      if (dist >= it.d - (er + cr) * 0.75) { fight = it; killAcc = 0; dist = it.d - (er + cr) * 0.75; }
+    }
+  }
+  if (army <= 0 && dist < finishD) { army = 0; finishRun(false); return; }
+
+  if (dist >= finishD) {
+    const s = steps[climbed];
+    if (s && dist >= s.d) {
+      if (army >= s.cost) { army -= s.cost; climbed++; SFX.step(); burst(armyX, CY - 10, '#ffd23f', 6, 120); }
+      else { stopped = true; dist = s.d; }
+    }
+    if (climbed >= steps.length || army <= 0) { stopped = true; army = Math.max(0, army); }
+  }
+  if (stopped) { endT += dt; if (endT > 1) finishRun(true); }
+}
+
+// ---------- draw world ----------
+function drawTree(x, y, s) {
+  ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.beginPath(); ctx.ellipse(x + 3, y + 10 * s, 14 * s, 5 * s, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3f9b4a'; ctx.beginPath(); ctx.arc(x, y, 14 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = '#56b862'; ctx.beginPath(); ctx.arc(x - 4 * s, y - 4 * s, 8 * s, 0, 7); ctx.fill();
+}
+function drawCrowd(x, y, n, sprite, t) {
+  const m = Math.min(Math.round(n), 400);
+  for (let i = m - 1; i >= 0; i--) {
+    const [fx, fy] = FORM[i]; const bob = Math.sin(t * 14 + i) * 1.2;
+    ctx.drawImage(sprite, x + fx - 12, y + fy - 12 + bob);
+  }
+}
+function drawWorld() {
+  const e = EXT(), d0 = dist;
+  ctx.fillStyle = '#9fd49a'; ctx.fillRect(e.x, e.y, e.w, e.h);
+  ctx.fillStyle = '#e8dcc4'; ctx.fillRect(TL, e.y, TR - TL, e.h);
+  ctx.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let y = (d0 % 60) - 60; y < H + 60; y += 60) ctx.fillRect(TL, y, TR - TL, 30);
+  ctx.fillStyle = '#c9b48f'; ctx.fillRect(TL - 6, e.y, 6, e.h); ctx.fillRect(TR, e.y, 6, e.h);
+  for (const t of deco) { const y = CY - (t.d - d0); if (y > -30 && y < H + 30) drawTree(t.x, y, t.s); }
+  const fy = CY - (finishD - d0);
+  if (fy > -30 && fy < H + 30) for (let i = 0; i < 17; i++) for (let j = 0; j < 2; j++) { ctx.fillStyle = (i + j) % 2 ? '#222' : '#fff'; ctx.fillRect(TL + i * 20, fy + j * 10, 20, 10); }
+  // steps
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const s = steps[i], y = CY - (s.d - d0); if (y < -60 || y > H + 60) continue;
+    const hue = (i * 18) % 360;
+    ctx.fillStyle = `hsl(${hue},70%,${i < climbed ? 72 : 58}%)`; ctx.fillRect(TL, y - 26, TR - TL, 52);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(TL, y - 26, TR - TL, 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(TL, y + 20, TR - TL, 6);
+    text('x' + s.m, MID, y, 22, '#fff', 'center', 'rgba(0,0,0,0.3)');
+  }
+  for (const it of items) {
+    const y = CY - (it.d - d0); if (y < -120 || y > H + 120) continue;
+    if (it.type === 'gate') {
+      for (const [side, g, x1, x2] of [['left', it.left, TL + 6, MID - 4], ['right', it.right, MID + 4, TR - 6]]) {
+        const good = g.op === '+' || g.op === 'x', faded = it.used && it.chosen !== side;
+        ctx.globalAlpha = faded ? 0.2 : (it.used ? 0.45 : 0.88); rr(x1, y - 26, x2 - x1, 52, 10);
+        const gr = ctx.createLinearGradient(0, y - 26, 0, y + 26); gr.addColorStop(0, good ? '#5db4ff' : '#ff7a7a'); gr.addColorStop(1, good ? '#2a7de1' : '#e33d3d');
+        ctx.fillStyle = gr; ctx.fill(); ctx.globalAlpha = 1;
+        if (!it.used) text(g.op + g.v, (x1 + x2) / 2, y + 2, 28, '#fff', 'center', 'rgba(0,0,0,0.25)');
+      }
+    } else if (it.type === 'coin' && !it.hit) {
+      const sq = Math.abs(Math.sin(time * 4 + it.d * 0.01)); ctx.save(); ctx.translate(it.x, y); ctx.scale(0.35 + sq * 0.65, 1); coinIcon(0, 0, 10); ctx.restore();
+    } else if (it.type === 'saw' && !it.done) {
+      const sx = it.sweep ? it.x + Math.sin(time * 2 + it.ph) * 60 : it.x;
+      if (it.sweep) { ctx.fillStyle = 'rgba(0,0,0,0.15)'; rr(it.x - 84, y - 4, 168, 8, 4); ctx.fill(); }
+      ctx.save(); ctx.translate(sx, y); ctx.rotate(time * 12);
+      ctx.fillStyle = '#9aa4b1'; ctx.beginPath();
+      for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, r = k % 2 ? 16 : 23; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill(); ctx.fillStyle = '#5b6470'; ctx.beginPath(); ctx.arc(0, 0, 6, 0, 7); ctx.fill(); ctx.restore();
+    } else if (it.type === 'enemy' && !it.done) {
+      drawCrowd(it.x, y, it.n, RED, time * 0.4);
+      const r = crowdR(it.n);
+      rr(it.x - 22, y - r - 30, 44, 24, 12); ctx.fillStyle = '#e74c3c'; ctx.fill(); text(String(Math.max(0, it.n)), it.x, y - r - 17, 15, '#fff');
+    }
+  }
+  drawCrowd(armyX, CY, army, BLUE, time);
+  const cr = crowdR(army);
+  ctx.font = '900 18px system-ui, sans-serif';
+  const lbl = String(Math.round(army)), lw = Math.max(44, ctx.measureText(lbl).width + 22);
+  rr(armyX - lw / 2, CY - cr - 36, lw, 26, 13); ctx.fillStyle = '#2a7de1'; ctx.fill(); text(lbl, armyX, CY - cr - 22, 18, '#fff');
+  for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  for (const p of popups) { ctx.globalAlpha = Math.min(1, p.life * 2); text(p.txt, p.x, p.y, p.sz, p.color, 'center', '#fff'); }
+  ctx.globalAlpha = 1;
+}
+function drawHUD() {
+  rr(14, 16, 100, 38, 19); ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill(); text('LEVEL ' + save.level, 64, 36, 16, '#2a5d8f');
+  rr(124, 28, 170, 14, 7); ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill();
+  const prog = clamp(dist / finishD, 0, 1); if (prog > 0) { rr(127, 31, 164 * prog, 8, 4); ctx.fillStyle = '#2a7de1'; ctx.fill(); }
+  rr(304, 16, 102, 38, 19); ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill(); coinIcon(326, 35, 11); text(fmt(runCoins), 344, 36, 17, '#7a5600', 'left');
+  if (save.level <= 2 && playT < 8) {
+    const a = clamp(Math.min(playT * 3, (8 - playT) * 2), 0, 1); ctx.globalAlpha = a;
+    rr(40, 676, 340, 60, 16); ctx.fillStyle = 'rgba(20,50,90,0.8)'; ctx.fill();
+    text('Drag to steer · BLUE gates grow your army', W / 2, 696, 14, '#fff', 'center', null, 800);
+    text('Beat red squads · climb the stairs at the end!', W / 2, 718, 14, '#9ff0b0', 'center', null, 800);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- UI ----------
+function button(x, y, w, h, label, color, fn, o = {}) {
+  const en = o.enabled !== false; ctx.save(); const pl = o.pulse ? 1 + Math.sin(time * 5) * 0.035 : 1;
+  ctx.translate(x + w / 2, y + h / 2); ctx.scale(pl, pl);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; rr(-w / 2, -h / 2 + 4, w, h, h / 2); ctx.fill();
+  ctx.fillStyle = en ? color : '#a7b3bf'; rr(-w / 2, -h / 2, w, h, h / 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.2)'; rr(-w / 2 + 5, -h / 2 + 3, w - 10, h / 2 - 3, h / 3); ctx.fill();
+  if (o.coin) { ctx.font = `900 ${o.size || 18}px system-ui, sans-serif`; const tw = ctx.measureText(label).width, tot = tw + 26; coinIcon(-tot / 2 + 10, 0, 10); text(label, -tot / 2 + 26, 1, o.size || 18, '#fff', 'left'); }
+  else text(label, 0, 1, o.size || 20, '#fff');
+  ctx.restore(); hits.push({ x, y, w, h, fn: () => { if (en) { SFX.click(); fn(); } else SFX.bad(); } });
+}
+function muteButton() {
+  const x = 16, y = 16; rr(x, y, 44, 40, 20); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+  ctx.fillStyle = '#2a5d8f'; ctx.beginPath(); ctx.moveTo(x + 12, y + 16); ctx.lineTo(x + 18, y + 16); ctx.lineTo(x + 25, y + 10); ctx.lineTo(x + 25, y + 30); ctx.lineTo(x + 18, y + 24); ctx.lineTo(x + 12, y + 24); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = save.muted ? '#e74c3c' : '#2a5d8f'; ctx.lineWidth = 2.5; ctx.beginPath();
+  if (save.muted) { ctx.moveTo(x + 28, y + 15); ctx.lineTo(x + 36, y + 25); ctx.moveTo(x + 36, y + 15); ctx.lineTo(x + 28, y + 25); } else ctx.arc(x + 26, y + 20, 7, -0.8, 0.8);
+  ctx.stroke(); hits.push({ x, y, w: 44, h: 40, fn: () => { save.muted = !save.muted; persist(); SFX.click(); } });
+}
+function drawMenu() {
+  const e = EXT(); ctx.fillStyle = '#9fd49a'; ctx.fillRect(e.x, e.y, e.w, e.h);
+  for (let i = 0; i < 9; i++) { drawTree(18, 40 + i * 90, 1); drawTree(W - 18, 85 + i * 90, 1); }
+  muteButton();
+  rr(W - 136, 16, 120, 40, 20); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill(); coinIcon(W - 114, 36, 12); text(fmt(save.coins), W - 94, 37, 19, '#7a5600', 'left');
+  text('ARMY', W / 2, 100, 58, '#fff', 'center', '#1d4f9e'); text('RUN', W / 2, 158, 58, '#ffd23f', 'center', '#1d4f9e');
+  drawCrowd(W / 2, 245, 30 + Math.round(Math.sin(time) * 5), BLUE, time);
+  text('LEVEL ' + save.level, W / 2, 318, 17, '#1d4f9e', 'center', null, 900);
+  button(W / 2 - 115, 340, 230, 62, 'PLAY', '#2fae5a', startRun, { pulse: true, size: 26 });
+  rr(20, 424, 380, 318, 26); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+  text('UPGRADES', W / 2, 456, 18, '#1d4f9e');
+  UPS.forEach((u, i) => {
+    const x = 32 + i * 122, y = 480, w = 112, l = save.up[u.id];
+    rr(x, y, w, 248, 18); ctx.fillStyle = '#eef4fb'; ctx.fill();
+    if (u.id === 'army') drawCrowd(x + w / 2, y + 48, 7, BLUE, time);
+    else if (u.id === 'armor') { ctx.fillStyle = '#7f8fa6'; ctx.beginPath(); ctx.moveTo(x + w / 2, y + 22); ctx.lineTo(x + w / 2 + 22, y + 32); ctx.lineTo(x + w / 2 + 18, y + 62); ctx.lineTo(x + w / 2, y + 76); ctx.lineTo(x + w / 2 - 18, y + 62); ctx.lineTo(x + w / 2 - 22, y + 32); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#3a8dff'; ctx.beginPath(); ctx.arc(x + w / 2, y + 48, 9, 0, 7); ctx.fill(); }
+    else { coinIcon(x + w / 2 - 9, y + 52, 13); coinIcon(x + w / 2 + 9, y + 44, 13); }
+    text(u.name, x + w / 2, y + 100, 15, '#2a5d8f'); text('Lv ' + (l + 1), x + w / 2, y + 122, 13, '#6a87a6', 'center', null, 800);
+    text(u.desc(l), x + w / 2, y + 144, 11, '#6a87a6', 'center', null, 700);
+    if (l >= MAX_UP) { text('MAX', x + w / 2, y + 205, 18, '#2fae5a'); return; }
+    const cost = upCost(u, l);
+    button(x + 8, y + 182, w - 16, 48, fmt(cost), '#ff9f1c', () => { save.coins -= cost; save.up[u.id]++; persist(); SFX.buy(); burst(x + w / 2, y + 48, '#ffd23f', 16); }, { enabled: save.coins >= cost, coin: true, size: 16 });
+  });
+}
+function drawResult(won) {
+  const a = Math.min(1, overlayT * 3), e = EXT(); ctx.globalAlpha = a * 0.55; ctx.fillStyle = '#0d2a45'; ctx.fillRect(e.x, e.y, e.w, e.h); ctx.globalAlpha = a;
+  const py = 170 + (1 - a) * 40; rr(36, py, 348, 420, 30); ctx.fillStyle = '#fff'; ctx.fill();
+  if (won) {
+    text('LEVEL ' + save.level, W / 2, py + 46, 22, '#6a87a6'); text('VICTORY!', W / 2, py + 84, 40, '#2a7de1');
+    for (let i = 0; i < 3; i++) star(W / 2 - 75 + i * 75, py + 150, i === 1 ? 34 : 28, i < stars && overlayT > 0.3 + i * 0.25);
+    text(`Climbed ${climbed} step${climbed === 1 ? '' : 's'} · x${mult}`, W / 2, py + 208, 17, '#4b5d70', 'center', null, 800);
+    coinIcon(W / 2 - 92, py + 244, 11); text(`${fmt(runCoins)} × ${mult} + ${10 + save.level * 3} bonus`, W / 2 - 74, py + 245, 16, '#7a5600', 'left', null, 800);
+  } else {
+    text('DEFEATED!', W / 2, py + 70, 40, '#e74c3c'); text('Your army was wiped out', W / 2, py + 120, 17, '#4b5d70', 'center', null, 700);
+    drawCrowd(W / 2, py + 180, 6, RED, time);
+    text('Tip: upgrade Start Army & Armor!', W / 2, py + 228, 15, '#2a7de1', 'center', null, 800);
+  }
+  rr(W / 2 - 90, py + 270, 180, 54, 27); ctx.fillStyle = '#fff6dc'; ctx.fill(); coinIcon(W / 2 - 50, py + 297, 15); text('+' + fmt(payout), W / 2 - 28, py + 298, 28, '#b07800', 'left');
+  if (overlayT > 0.6) button(W / 2 - 115, py + 342, 230, 56, won ? 'COLLECT' : 'CONTINUE', '#2fae5a', collect, { pulse: true, size: 22 });
+  ctx.globalAlpha = 1;
+}
+function draw() {
+  hits = [];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#9fd49a'; ctx.fillRect(0, 0, vw, vh);
+  const sx = shake ? rnd(-shake, shake) * 0.4 : 0, sy = shake ? rnd(-shake, shake) * 0.4 : 0;
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (ox + sx * scale), dpr * (oy + sy * scale));
+  if (state === 'menu') { drawMenu(); for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill(); } ctx.globalAlpha = 1; return; }
+  drawWorld(); drawHUD();
+  if (state === 'result') drawResult(true); if (state === 'fail') drawResult(false);
+}
+let last = performance.now();
+function frame(now) { const dt = Math.min(0.033, (now - last) / 1000); last = now; update(dt); draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
+window.__game = { state: () => state, save: () => save, start: startRun, collect, items: () => items, dist: () => dist, army: () => army, x: () => armyX, setTarget: x => targetX = x };
+})();
+</script>
+</body>
+</html>

@@ -1,18 +1,26 @@
 # Playable Games
 
-Simple, mobile-friendly web games by Raphael Etafo, built for YouTube Playables.
+Mobile-friendly web games by Raphael Etafo, built for YouTube Playables.
 
-Each game lives in its own folder as a single `index.html` and runs in any modern browser — no download, no install.
+Each game is a single `index.html` with no external files or network calls (works offline), supports touch and keyboard, has a mute button, and saves progress on the device.
+
+Play them all: https://retafos.github.io/playable-games/
 
 ## Games
 
-| Game | Type | How to play |
-|------|------|-------------|
-| [Snowball Run](snowball-run/) | Runner | Drag left/right to steer a growing snowball through gates, rocks and trees, then smash the walls at the end. Endless levels, coins, upgrades shop, unlockable skins, 4 scenery themes. |
-| [Burger Boss](burger-boss/) | Tycoon | Tap stations to cook, serve customers, then upgrade, hire chefs and open new counters. |
-| [Pull the Pin](pull-the-pin/) | Puzzle | Pull pins in the right order to fill the cup with gold. Keep lava out; water turns lava to stone. |
-| [Slime Eater](slime-eater/) | Growth | Drag to move. Eat anything smaller than you and grow until you can swallow the house. |
+| Game | Genre | Longevity |
+|------|-------|-----------|
+| [Snowball Run](snowball-run/) | Runner | Endless levels, coins, upgrades shop, 6 skins, 4 themes |
+| [Army Run](army-run/) | Crowd runner | Endless levels, enemy squads, stair multipliers, upgrades |
+| [Hero Survivors](hero-survivors/) | Survivors / action | 9 power-ups, boss, endless stages |
+| [Burger Boss](burger-boss/) | Idle tycoon | Upgrades, chefs, counters, saved progress |
+| [Slime Eater](slime-eater/) | Growth / io | Endless houses with rising goals |
+| [Block Blast](block-blast/) | Block puzzle | Endless, combos, best score |
+| [Merge Drop](merge-drop/) | Number merge | Endless, chains, best score & top tile |
+| [Ball Sort](ball-sort/) | Sorting puzzle | Endless generated levels (all checked solvable) |
+| [Arrow Escape](arrow-escape/) | Tap-out puzzle | Endless generated levels (always solvable), hints |
+| [Pull the Pin](pull-the-pin/) | Physics puzzle | 4 handmade levels |
 
-## Status
+## Next steps
 
-Early prototypes. Next steps: polish the chosen game, add sound, and integrate the YouTube Playables SDK once onboarded.
+Integrate the YouTube Playables SDK (game ready, pause/resume, save data, audio settings) once onboarded.

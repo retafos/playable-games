@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Ball Sort</title>
+<style>
+  html,body{margin:0;height:100%;background:#123047;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+'use strict';
+const W = 420, H = 760;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let scale = 1, ox = 0, oy = 0, dpr = 1, vw = 0, vh = 0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2); vw = innerWidth; vh = innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr; cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
+  scale = Math.min(vw / W, vh / H); ox = (vw - W * scale) / 2; oy = (vh - H * scale) / 2;
+}
+addEventListener('resize', resize); resize();
+const toGame = e => ({ x: (e.clientX - ox) / scale, y: (e.clientY - oy) / scale });
+const EXT = () => ({ x: -ox / scale - 2, y: -oy / scale - 2, w: vw / scale + 4, h: vh / scale + 4 });
+function rr(x, y, w, h, r) { r = Math.max(0, Math.min(r, w / 2, h / 2)); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function text(t, x, y, size, color, align = 'center', stroke = null, weight = 900) {
+  ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (stroke) { ctx.lineWidth = size * 0.18; ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); }
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+let save = { level: 1, muted: false };
+try { const s = JSON.parse(localStorage.getItem('ballsort_v1') || 'null'); if (s) save = Object.assign(save, s); } catch (e) {}
+const persist = () => { try { localStorage.setItem('ballsort_v1', JSON.stringify(save)); } catch (e) {} };
+let actx = null;
+function audio() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (actx && actx.state === 'suspended') actx.resume(); }
+function tone(f, d = 0.1, type = 'sine', v = 0.12, slide = 0, delay = 0) {
+  if (save.muted || !actx) return; const t0 = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t0 + d);
+  g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + d); o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + d + 0.02);
+}
+const SFX = {
+  lift: () => tone(660, 0.07, 'triangle', 0.1), drop: () => tone(440, 0.09, 'triangle', 0.12, -120), no: () => tone(150, 0.15, 'square', 0.06),
+  full: () => [784, 988, 1175].forEach((f, i) => tone(f, 0.12, 'triangle', 0.1, 0, i * 0.06)), click: () => tone(880, 0.05, 'square', 0.05),
+  win: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.18, 'triangle', 0.12, 0, i * 0.08)),
+};
+
+const CAP = 4;
+const COLORS = ['#ff4d4d', '#3a8dff', '#2fcf6a', '#ffd23f', '#a45cff', '#ff8a1f', '#ff6bc1', '#22d3ee', '#9b6a3c', '#c6ff4a'];
+let tubes = [], sel = -1, history = [], extraUsed = false, state = 'play', overlayT = 0, time = 0, moves = 0, anim = null, shakeT = {}, particles = [], hits = [], doneFlash = {};
+
+function colorsFor(l) { return Math.min(9, 3 + Math.floor((l - 1) / 2)); }
+function solvable(start, limit = 60000) {
+  const seen = new Set(); let nodes = 0;
+  const key = ts => ts.map(t => t.join(',')).sort().join('|');
+  const solved = ts => ts.every(t => t.length === 0 || (t.length === CAP && t.every(c => c === t[0])));
+  function dfs(ts) {
+    if (solved(ts)) return true;
+    if (++nodes > limit) return false;
+    const k = key(ts); if (seen.has(k)) return false; seen.add(k);
+    const movesList = [];
+    for (let i = 0; i < ts.length; i++) {
+      const a = ts[i]; if (!a.length) continue;
+      const top = a[a.length - 1];
+      if (a.length === CAP && a.every(c => c === top)) continue;
+      let run = 0; for (let q = a.length - 1; q >= 0 && a[q] === top; q--) run++;
+      let emptyTried = false;
+      for (let j = 0; j < ts.length; j++) {
+        if (i === j) continue; const b = ts[j];
+        if (b.length >= CAP) continue;
+        if (b.length && b[b.length - 1] !== top) continue;
+        if (!b.length) { if (run === a.length || emptyTried) continue; emptyTried = true; }
+        movesList.push([b.length ? 0 : 1, i, j]);
+      }
+    }
+    movesList.sort((x, y) => x[0] - y[0]);
+    for (const [, i, j] of movesList) {
+      const n = ts.map(t => t.slice()); n[j].push(n[i].pop());
+      if (dfs(n)) return true;
+    }
+    return false;
+  }
+  return dfs(start);
+}
+function buildLevel() {
+  const k = colorsFor(save.level), R = rng(save.level * 104729 + 7);
+  let ts;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const balls = []; for (let c = 0; c < k; c++) for (let i = 0; i < CAP; i++) balls.push(c);
+    for (let i = balls.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [balls[i], balls[j]] = [balls[j], balls[i]]; }
+    ts = []; for (let t = 0; t < k; t++) ts.push(balls.slice(t * CAP, t * CAP + CAP));
+    ts.push([], []);
+    const tooEasy = ts.some(t => t.length === CAP && t.every(c => c === t[0]));
+    if (!tooEasy && solvable(ts)) break;
+  }
+  tubes = ts; sel = -1; history = []; extraUsed = false; state = 'play'; overlayT = 0; moves = 0; anim = null; particles = []; doneFlash = {};
+}
+buildLevel();
+
+// ---------- layout ----------
+function layout() {
+  const n = tubes.length, rows = n > 6 ? 2 : 1, perRow = Math.ceil(n / rows);
+  const tw = 50, th = CAP * 38 + 18, gap = Math.min(22, (W - 30 - perRow * tw) / Math.max(1, perRow - 1));
+  const pos = [];
+  for (let i = 0; i < n; i++) {
+    const r = rows === 2 ? (i < perRow ? 0 : 1) : 0, idx = r === 0 ? i : i - perRow;
+    const cnt = r === 0 ? perRow : n - perRow, rowW = cnt * tw + (cnt - 1) * gap;
+    const x = (W - rowW) / 2 + idx * (tw + gap), y = rows === 2 ? 190 + r * (th + 70) : 280;
+    pos.push({ x, y, w: tw, h: th });
+  }
+  return pos;
+}
+const isDone = t => t.length === CAP && t.every(c => c === t[0]);
+function tapTube(i) {
+  if (state !== 'play' || anim) return;
+  const t = tubes[i];
+  if (sel < 0) { if (t.length && !isDone(t)) { sel = i; SFX.lift(); } return; }
+  if (sel === i) { sel = -1; SFX.drop(); return; }
+  const from = tubes[sel], ball = from[from.length - 1];
+  if (t.length < CAP && (t.length === 0 || t[t.length - 1] === ball)) {
+    history.push(tubes.map(x => x.slice()));
+    anim = { from: sel, to: i, ball, t: 0 };
+    from.pop(); sel = -1; moves++;
+  } else { shakeT[i] = 0.3; SFX.no(); sel = -1; }
+}
+function finishAnim() {
+  const a = anim; tubes[a.to].push(a.ball); anim = null; SFX.drop();
+  if (isDone(tubes[a.to])) { SFX.full(); doneFlash[a.to] = 1; const p = layout()[a.to]; for (let q = 0; q < 18; q++) { const an = Math.random() * 7, sp = 80 + Math.random() * 160; particles.push({ x: p.x + p.w / 2, y: p.y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp - 100, life: 0.8, c: COLORS[a.ball] }); } }
+  if (tubes.every(t => t.length === 0 || isDone(t))) setTimeout(() => { state = 'win'; overlayT = 0; SFX.win(); save.level++; persist(); }, 400);
+}
+function undo() { if (anim || !history.length || state !== 'play') return; tubes = history.pop(); sel = -1; SFX.click(); }
+function addTube() { if (extraUsed || state !== 'play') return; extraUsed = true; tubes.push([]); SFX.click(); }
+
+cv.addEventListener('pointerdown', e => {
+  audio(); const p = toGame(e);
+  for (let i = hits.length - 1; i >= 0; i--) { const h = hits[i]; if (p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h) { h.fn(); return; } }
+  if (state !== 'play') return;
+  layout().forEach((q, i) => { if (p.x >= q.x - 8 && p.x <= q.x + q.w + 8 && p.y >= q.y - 60 && p.y <= q.y + q.h + 10) tapTube(i); });
+});
+addEventListener('keydown', e => { audio(); if (e.key === 'z') undo(); if ((e.key === ' ' || e.key === 'Enter') && state === 'win' && overlayT > 0.5) buildLevel(); });
+
+function update(dt) {
+  time += dt; overlayT += dt;
+  if (anim) { anim.t += dt / 0.28; if (anim.t >= 1) finishAnim(); }
+  for (const k in shakeT) shakeT[k] = Math.max(0, shakeT[k] - dt);
+  for (const k in doneFlash) doneFlash[k] = Math.max(0, doneFlash[k] - dt);
+  particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; p.life -= dt; }); particles = particles.filter(p => p.life > 0);
+}
+
+const ballSprites = COLORS.map(c => {
+  const s = document.createElement('canvas'); s.width = s.height = 64; const g = s.getContext('2d');
+  const gr = g.createRadialGradient(24, 22, 3, 32, 32, 31); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.18, c); gr.addColorStop(1, shade(c, -0.35));
+  g.fillStyle = gr; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); return s;
+});
+function shade(hex, f) { const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255; r = Math.round(r * (1 + f)); g = Math.round(g * (1 + f)); b = Math.round(b * (1 + f)); return `rgb(${r},${g},${b})`; }
+const BR = 17;
+function drawBall(c, x, y) { ctx.drawImage(ballSprites[c], x - BR, y - BR, BR * 2, BR * 2); }
+
+function button(x, y, w, h, label, color, fn, o = {}) {
+  const en = o.enabled !== false; ctx.save(); const pl = o.pulse ? 1 + Math.sin(time * 5) * 0.035 : 1; ctx.translate(x + w / 2, y + h / 2); ctx.scale(pl, pl);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; rr(-w / 2, -h / 2 + 4, w, h, h / 2); ctx.fill();
+  ctx.fillStyle = en ? color : '#4a6275'; rr(-w / 2, -h / 2, w, h, h / 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.18)'; rr(-w / 2 + 5, -h / 2 + 3, w - 10, h / 2 - 3, h / 3); ctx.fill();
+  text(label, 0, 1, o.size || 17, '#fff'); ctx.restore(); hits.push({ x, y, w, h, fn: () => { if (en) { SFX.click(); fn(); } } });
+}
+
+function draw() {
+  hits = [];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#123047'; ctx.fillRect(0, 0, vw, vh);
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * ox, dpr * oy);
+  const e = EXT(); const bg = ctx.createLinearGradient(0, e.y, 0, e.y + e.h); bg.addColorStop(0, '#16405e'); bg.addColorStop(1, '#0f2a40'); ctx.fillStyle = bg; ctx.fillRect(e.x, e.y, e.w, e.h);
+  text('BALL SORT', W / 2, 54, 34, '#fff', 'center', '#2a7de1');
+  text('LEVEL ' + save.level, W / 2, 96, 20, '#ffd23f');
+  rr(14, 18, 44, 40, 20); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill(); text(save.muted ? '🔇' : '🔊', 36, 39, 18, '#fff');
+  hits.push({ x: 14, y: 18, w: 44, h: 40, fn: () => { save.muted = !save.muted; persist(); } });
+  rr(W - 58, 18, 44, 40, 20); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(W - 36, 38, 9, -0.3, Math.PI * 1.5); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(W - 36, 24); ctx.lineTo(W - 29, 29); ctx.lineTo(W - 37, 34); ctx.fill();
+  hits.push({ x: W - 58, y: 18, w: 44, h: 40, fn: () => { SFX.click(); buildLevel(); } });
+  if (save.level <= 2 && moves === 0) text('Tap a tube, then tap where the top ball goes', W / 2, 134, 14, '#9ff0b0', 'center', null, 800);
+
+  const pos = layout();
+  tubes.forEach((t, i) => {
+    const p = pos[i], sh = shakeT[i] ? Math.sin(time * 70) * 5 * shakeT[i] / 0.3 : 0;
+    const x = p.x + sh;
+    if (doneFlash[i]) { ctx.fillStyle = `rgba(255,230,120,${doneFlash[i] * 0.5})`; rr(x - 8, p.y - 8, p.w + 16, p.h + 16, 30); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.10)'; rr(x, p.y, p.w, p.h, 25); ctx.fill();
+    ctx.strokeStyle = isDone(t) ? 'rgba(140,255,170,0.9)' : 'rgba(255,255,255,0.55)'; ctx.lineWidth = 3; rr(x, p.y, p.w, p.h, 25); ctx.stroke();
+    t.forEach((c, k) => {
+      let by = p.y + p.h - 10 - BR - k * 38;
+      if (i === sel && k === t.length - 1) by = p.y - 34 + Math.sin(time * 8) * 3;
+      drawBall(c, x + p.w / 2, by);
+    });
+  });
+  if (anim) {
+    const a = pos[anim.from], b = pos[anim.to], t = anim.t;
+    const x0 = a.x + a.w / 2, y0 = a.y - 34, x1 = b.x + b.w / 2, y1 = b.y + b.h - 10 - BR - tubes[anim.to].length * 38;
+    let x, y;
+    if (t < 0.6) { const u = t / 0.6; x = x0 + (x1 - x0) * u; y = Math.min(y0, b.y - 34) - Math.sin(u * Math.PI) * 40; }
+    else { const u = (t - 0.6) / 0.4; x = x1; y = (b.y - 34) + (y1 - (b.y - 34)) * u * u; }
+    drawBall(anim.ball, x, y);
+  }
+  for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
+
+  button(40, 664, 160, 52, 'UNDO', '#3a8dff', undo, { enabled: history.length > 0 && state === 'play' });
+  button(220, 664, 160, 52, extraUsed ? 'TUBE USED' : '+ EXTRA TUBE', '#2fae5a', addTube, { enabled: !extraUsed && state === 'play' });
+
+  if (state === 'win') {
+    const a = Math.min(1, overlayT * 3); ctx.globalAlpha = a * 0.55; ctx.fillStyle = '#081a29'; ctx.fillRect(e.x, e.y, e.w, e.h); ctx.globalAlpha = a;
+    const py = 240 + (1 - a) * 30; rr(40, py, 340, 250, 28); ctx.fillStyle = '#fff'; ctx.fill();
+    text('LEVEL ' + (save.level - 1), W / 2, py + 50, 20, '#6a7a8a'); text('SORTED!', W / 2, py + 92, 40, '#2a7de1');
+    text(moves + ' moves', W / 2, py + 134, 17, '#4b5d70', 'center', null, 800);
+    if (overlayT > 0.5) button(W / 2 - 110, py + 170, 220, 54, 'NEXT LEVEL', '#2fae5a', buildLevel, { pulse: true, size: 20 });
+    ctx.globalAlpha = 1;
+  }
+}
+let last = performance.now();
+function frame(now) { const dt = Math.min(0.033, (now - last) / 1000); last = now; update(dt); draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+window.__game = { state: () => state, save: () => save, tubes: () => tubes, tap: tapTube, next: buildLevel, solvable };
+})();
+</script>
+</body>
+</html>

@@ -14,7 +14,7 @@
 <script>
 (() => {
 'use strict';
-const W = 420, H = 760, WS = 1400, ROUND = 75;
+const W = 420, H = 760, WS = 1400, ROUND = 60;
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let scale = 1, ox = 0, oy = 0, dpr = 1, vw = 0, vh = 0;
 function resize() {
@@ -42,8 +42,12 @@ function text(t, x, y, size, color, align = 'center', stroke = null, weight = 90
   ctx.fillStyle = color; ctx.fillText(t, x, y);
 }
 
-let best = 0;
-try { best = parseFloat(localStorage.getItem('slime_best')) || 0; } catch (e) {}
+let best = 0, level = 1;
+try { best = parseFloat(localStorage.getItem('slime_best')) || 0; level = parseInt(localStorage.getItem('slime_level')) || 1; } catch (e) {}
+const goalPct = () => Math.min(85, 26 + level * 4);
+const FLOORS = [['#e8c89a', 'rgba(150,100,50,0.18)'], ['#cfe3f0', 'rgba(70,110,150,0.16)'], ['#e9d6ee', 'rgba(120,70,140,0.16)'], ['#d9e8c6', 'rgba(80,120,50,0.16)'], ['#f0d9c0', 'rgba(160,90,60,0.16)']];
+const floorCol = () => FLOORS[(level - 1) % FLOORS.length];
+let passed = false, goalShown = false;
 
 // ---------- objects ----------
 const COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22', '#ff6b9a', '#2ecc71'];
@@ -101,7 +105,7 @@ function buildWorld() {
 function startGame() {
   buildWorld();
   P = { x: WS / 2, y: WS / 2, R: 13, vx: 0, vy: 0, look: 0, squish: 0 };
-  eatenArea = 0; timeLeft = ROUND; state = 'play'; popups = []; crumbs = []; endT = 0; zoom = 1.3;
+  eatenArea = 0; timeLeft = ROUND; goalShown = false; passed = false; state = 'play'; popups = []; crumbs = []; endT = 0; zoom = 1.3;
 }
 
 // ---------- input ----------
@@ -132,8 +136,14 @@ function update(dt) {
   if (timeLeft <= 0) {
     timeLeft = 0; state = 'over'; endT = 0;
     const pct = eatenArea / totalArea * 100;
-    if (pct > best) { best = pct; try { localStorage.setItem('slime_best', best); } catch (e) {} }
+    if (pct > best) best = pct;
+    passed = pct >= goalPct();
+    if (passed) level++;
+    try { localStorage.setItem('slime_best', best); localStorage.setItem('slime_level', level); } catch (e) {}
     return;
+  }
+  if (!goalShown && eatenArea / totalArea * 100 >= goalPct()) {
+    goalShown = true; popups.push({ txt: 'GOAL REACHED!', x: P.x, y: P.y - P.R - 40, color: '#ffd23f', life: 2 });
   }
 
   let mx = 0, my = 0;
@@ -171,7 +181,7 @@ function update(dt) {
     }
   }
   const zt = W / (P.R * 9 + 230);
-  zoom += (zt - zoom) * Math.min(1, dt * 2);
+  zoom += (Math.max(zt, Math.max(W, H) / WS) - zoom) * Math.min(1, dt * 2);
 }
 
 // ---------- draw ----------
@@ -215,10 +225,11 @@ function draw() {
 
   // world transform
   ctx.save();
-  ctx.translate(W / 2, H / 2); ctx.scale(zoom, zoom); ctx.translate(-P.x, -P.y);
+  const camX = clamp(P.x, W / 2 / zoom, WS - W / 2 / zoom), camY = clamp(P.y, H / 2 / zoom, WS - H / 2 / zoom);
+  ctx.translate(W / 2, H / 2); ctx.scale(zoom, zoom); ctx.translate(-camX, -camY);
   ctx.fillStyle = '#4a3557'; ctx.fillRect(-2000, -2000, WS + 4000, WS + 4000);
-  ctx.fillStyle = '#e8c89a'; ctx.fillRect(0, 0, WS, WS);
-  ctx.strokeStyle = 'rgba(150,100,50,0.18)'; ctx.lineWidth = 2;
+  ctx.fillStyle = floorCol()[0]; ctx.fillRect(0, 0, WS, WS);
+  ctx.strokeStyle = floorCol()[1]; ctx.lineWidth = 2;
   for (let y = 0; y < WS; y += 46) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WS, y); ctx.stroke();
     for (let x = ((y / 46) % 3) * 70; x < WS; x += 210) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 46); ctx.stroke(); }
@@ -233,7 +244,7 @@ function draw() {
   const viewR = (Math.max(W, H) / 2) / zoom + 80;
   for (const o of objs) {
     if (o.eaten && o.anim >= 1) continue;
-    if (Math.abs(o.x - P.x) > viewR || Math.abs(o.y - P.y) > viewR) continue;
+    if (Math.abs(o.x - camX) > viewR || Math.abs(o.y - camY) > viewR) continue;
     ctx.save();
     if (o.eaten) {
       const k = Math.min(1, o.anim);
@@ -264,7 +275,7 @@ function draw() {
   text(Math.floor(tl / 60) + ':' + String(tl % 60).padStart(2, '0'), 62, 37, 22, '#fff');
   rr(124, 22, 282, 28, 14); ctx.fillStyle = 'rgba(30,20,40,0.75)'; ctx.fill();
   if (pct > 0) { rr(128, 26, 274 * Math.min(1, pct / 100), 20, 10); ctx.fillStyle = '#5fd84a'; ctx.fill(); }
-  [25, 50, 80].forEach(v => { ctx.fillStyle = pct >= v ? '#ffd23f' : 'rgba(255,255,255,0.35)'; ctx.fillRect(128 + 274 * v / 100 - 1, 24, 2, 24); });
+  { const g = goalPct(); ctx.fillStyle = pct >= g ? '#ffd23f' : '#ffffff'; ctx.fillRect(128 + 274 * g / 100 - 2, 20, 4, 32); text('GOAL', 128 + 274 * g / 100, 62, 11, '#fff', 'center', 'rgba(0,0,0,0.5)'); }
   text(Math.floor(pct) + '% EATEN', 265, 37, 14, '#fff');
   text('Size ' + Math.round(P.R), W / 2, 74, 15, '#fff', 'center', 'rgba(0,0,0,0.4)');
 
@@ -285,20 +296,21 @@ function drawOver(pct) {
   ctx.globalAlpha = a;
   const y = 220 + (1 - a) * 30;
   rr(40, y, 340, 300, 28); ctx.fillStyle = '#fff'; ctx.fill();
-  text("TIME'S UP!", W / 2, y + 50, 34, '#2fa83b');
-  text('You ate ' + Math.floor(pct) + '% of the house', W / 2, y + 95, 18, '#4a3b5a', 'center', null, 700);
-  const stars = pct >= 80 ? 3 : pct >= 50 ? 2 : pct >= 25 ? 1 : 0;
+  const g = passed ? goalPct() - 4 : goalPct();
+  text(passed ? 'HOUSE ' + (level - 1) + ' DONE!' : 'NOT ENOUGH!', W / 2, y + 50, 32, passed ? '#2fa83b' : '#e74c3c');
+  text('You ate ' + Math.floor(pct) + '% · goal ' + Math.min(85, g) + '%', W / 2, y + 95, 18, '#4a3b5a', 'center', null, 700);
+  const stars = !passed ? 0 : pct >= Math.min(100, g + 30) ? 3 : pct >= Math.min(100, g + 15) ? 2 : 1;
   for (let i = 0; i < 3; i++) star(W / 2 - 70 + i * 70, y + 150, i === 1 ? 32 : 26, i < stars);
   text('Best: ' + Math.floor(best) + '%', W / 2, y + 200, 15, '#8a7a9a', 'center', null, 700);
   const pulse = 1 + Math.sin(t * 5) * 0.03;
   ctx.save(); ctx.translate(W / 2, y + 252); ctx.scale(pulse, pulse);
   rr(-110, -26, 220, 52, 26); ctx.fillStyle = '#2fae5a'; ctx.fill();
-  text('PLAY AGAIN', 0, 1, 20, '#fff'); ctx.restore();
+  text(passed ? 'NEXT HOUSE' : 'TRY AGAIN', 0, 1, 20, '#fff'); ctx.restore();
   ctx.globalAlpha = 1;
 }
 
 function drawMenu() {
-  ctx.fillStyle = '#e8c89a'; ctx.fillRect(-ox / scale, -oy / scale, vw / scale, vh / scale);
+  ctx.fillStyle = floorCol()[0]; ctx.fillRect(-ox / scale, -oy / scale, vw / scale, vh / scale);
   ctx.save(); ctx.translate(70, 610); ctx.rotate(0.3); DRAW.sofa(55, '#9b59b6'); ctx.restore();
   ctx.save(); ctx.translate(360, 140); DRAW.plant(24); ctx.restore();
   ctx.save(); ctx.translate(60, 120); DRAW.ball(14, '#e74c3c'); ctx.restore();
@@ -316,10 +328,11 @@ function drawMenu() {
   ctx.save(); ctx.translate(W / 2, 610); ctx.scale(pulse, pulse);
   rr(-120, -30, 240, 60, 30); ctx.fillStyle = '#2fae5a'; ctx.fill();
   text('TAP TO PLAY', 0, 1, 24, '#fff'); ctx.restore();
-  if (best > 0) text('Best: ' + Math.floor(best) + '%', W / 2, 680, 16, '#4a3557', 'center', null, 700);
+  text('HOUSE ' + level + '  ·  eat ' + goalPct() + '% in 1 minute', W / 2, 680, 16, '#4a3557', 'center', null, 800);
 }
 
 state = 'menu'; t = 0; P = null; popups = []; crumbs = [];
+window.__game = { state: () => state, start: () => startGame(), P: () => P, setTime: v => timeLeft = v, level: () => level };
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;

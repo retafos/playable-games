@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Merge Drop</title>
+<style>
+  html,body{margin:0;height:100%;background:#2a1f3d;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+'use strict';
+const W = 420, H = 760;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let scale = 1, ox = 0, oy = 0, dpr = 1, vw = 0, vh = 0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2); vw = innerWidth; vh = innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr; cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
+  scale = Math.min(vw / W, vh / H); ox = (vw - W * scale) / 2; oy = (vh - H * scale) / 2;
+}
+addEventListener('resize', resize); resize();
+const toGame = e => ({ x: (e.clientX - ox) / scale, y: (e.clientY - oy) / scale });
+const EXT = () => ({ x: -ox / scale - 2, y: -oy / scale - 2, w: vw / scale + 4, h: vh / scale + 4 });
+function rr(x, y, w, h, r) { r = Math.max(0, Math.min(r, w / 2, h / 2)); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function text(t, x, y, size, color, align = 'center', stroke = null, weight = 900) {
+  ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (stroke) { ctx.lineWidth = size * 0.18; ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); }
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+
+let save = { best: 0, bestTile: 2, muted: false };
+try { const s = JSON.parse(localStorage.getItem('mergedrop_v1') || 'null'); if (s) save = Object.assign(save, s); } catch (e) {}
+const persist = () => { try { localStorage.setItem('mergedrop_v1', JSON.stringify(save)); } catch (e) {} };
+let actx = null;
+function audio() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (actx && actx.state === 'suspended') actx.resume(); }
+function tone(f, d = 0.1, type = 'sine', v = 0.12, slide = 0, delay = 0) {
+  if (save.muted || !actx) return; const t0 = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t0 + d);
+  g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + d); o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + d + 0.02);
+}
+const SFX = {
+  drop: () => tone(260, 0.08, 'triangle', 0.12, -60), merge: k => tone(400 * Math.pow(1.12, k), 0.14, 'triangle', 0.13, 150), no: () => tone(150, 0.12, 'square', 0.05),
+  over: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.25, 'triangle', 0.1, 0, i * 0.14)), click: () => tone(880, 0.05, 'square', 0.05),
+};
+const buzz = ms => { try { if (!save.muted && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
+
+const COLS = 5, ROWS = 7, CELL = 72, BX = (W - COLS * CELL) / 2, BY = 168;
+const label = v => v >= 1e9 ? Math.round(v / 1e9) + 'B' : v >= 1e6 ? Math.round(v / 1e6) + 'M' : v >= 1e4 ? Math.round(v / 1e3) + 'K' : String(v);
+const exp = v => Math.round(Math.log2(v));
+function colorFor(v) { const e = exp(v), h = (e * 37 + 200) % 360; return [`hsl(${h},78%,62%)`, `hsl(${h},70%,44%)`]; }
+
+let grid, blocks, nextV, afterV, score, state, overlayT = 0, time = 0, queue, stepT, chain, aimCol = -1, popups, particles, hits = [], shownScore = 0, idc = 0, shakeCol = -1, shakeT = 0;
+function maxTile() { let m = 2; blocks.forEach(b => m = Math.max(m, b.v)); return m; }
+function randValue() {
+  const top = Math.max(1, Math.min(6, exp(maxTile()) - 2));
+  const weights = []; for (let e = 1; e <= top; e++) weights.push(1 / e);
+  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let e = 1; e <= top; e++) { r -= weights[e - 1]; if (r <= 0) return Math.pow(2, e); }
+  return 2;
+}
+function newGame() {
+  grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null)); blocks = [];
+  score = 0; shownScore = 0; state = 'play'; overlayT = 0; queue = []; stepT = 0; chain = 0; popups = []; particles = [];
+  nextV = 2; afterV = randValue();
+}
+function lowestEmpty(c) { for (let r = ROWS - 1; r >= 0; r--) if (!grid[r][c]) return r; return -1; }
+function dropIn(c) {
+  if (state !== 'play' || queue.length) return;
+  const r = lowestEmpty(c);
+  if (r < 0) { shakeCol = c; shakeT = 0.3; SFX.no(); return; }
+  const b = { id: idc++, v: nextV, c, r, dx: c, dy: -1, pop: 0 };
+  blocks.push(b); grid[r][c] = b; SFX.drop();
+  nextV = afterV; afterV = randValue();
+  queue = [b]; stepT = 0.16; chain = 0; state = 'resolve';
+}
+function gravity() {
+  const moved = [];
+  for (let c = 0; c < COLS; c++) {
+    let w = ROWS - 1;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      const b = grid[r][c];
+      if (b) { if (r !== w) { grid[w][c] = b; grid[r][c] = null; b.r = w; moved.push(b); } w--; }
+    }
+  }
+  return moved;
+}
+function resolveStep() {
+  while (queue.length) {
+    const b = queue.shift();
+    if (!blocks.includes(b)) continue;
+    const nb = [[0, 1], [-1, 0], [1, 0], [0, -1]].map(([dc, dr]) => grid[b.r + dr] && grid[b.r + dr][b.c + dc]).filter(n => n && n.v === b.v);
+    if (!nb.length) continue;
+    nb.forEach(n => { grid[n.r][n.c] = null; blocks.splice(blocks.indexOf(n), 1); for (let q = 0; q < 6; q++) { const a = Math.random() * 7, sp = 60 + Math.random() * 140; particles.push({ x: BX + n.c * CELL + CELL / 2, y: BY + n.r * CELL + CELL / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5, col: colorFor(n.v)[0] }); } });
+    b.v *= Math.pow(2, nb.length); b.pop = 1; chain++;
+    score += b.v; SFX.merge(chain); buzz(15);
+    if (chain >= 2) popups.push({ txt: 'CHAIN x' + chain, x: BX + b.c * CELL + CELL / 2, y: BY + b.r * CELL, life: 1 });
+    if (b.v > save.bestTile) { save.bestTile = b.v; persist(); }
+    const moved = gravity();
+    queue = [b, ...moved.filter(m => m !== b)];
+    if (moved.includes(b)) queue = [b, ...moved.filter(m => m !== b)];
+    return true;
+  }
+  return false;
+}
+cv.addEventListener('pointerdown', e => {
+  audio(); const p = toGame(e);
+  for (let i = hits.length - 1; i >= 0; i--) { const h = hits[i]; if (p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h) { h.fn(); return; } }
+  if (p.x >= BX && p.x < BX + COLS * CELL && p.y > 120) aimCol = Math.floor((p.x - BX) / CELL);
+});
+cv.addEventListener('pointermove', e => { if (aimCol < 0) return; const p = toGame(e); aimCol = Math.max(0, Math.min(COLS - 1, Math.floor((p.x - BX) / CELL))); });
+addEventListener('pointerup', () => { if (aimCol >= 0) { dropIn(aimCol); aimCol = -1; } });
+let keyCol = 2;
+addEventListener('keydown', e => {
+  audio();
+  if (e.key >= '1' && e.key <= '5') dropIn(+e.key - 1);
+  if (e.key === 'ArrowLeft') keyCol = Math.max(0, keyCol - 1); if (e.key === 'ArrowRight') keyCol = Math.min(COLS - 1, keyCol + 1);
+  if (e.key === ' ' || e.key === 'Enter') { if (state === 'over' && overlayT > 0.6) newGame(); else dropIn(keyCol); }
+});
+
+function update(dt) {
+  time += dt; overlayT += dt; shakeT = Math.max(0, shakeT - dt);
+  shownScore += (score - shownScore) * Math.min(1, dt * 10); if (Math.abs(score - shownScore) < 0.5) shownScore = score;
+  for (const b of blocks) { b.dx += (b.c - b.dx) * Math.min(1, dt * 18); b.dy += (b.r - b.dy) * Math.min(1, dt * 14); b.pop = Math.max(0, b.pop - dt * 4); }
+  popups.forEach(p => { p.y -= 40 * dt; p.life -= dt; }); popups = popups.filter(p => p.life > 0);
+  particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }); particles = particles.filter(p => p.life > 0);
+  if (state === 'resolve') {
+    stepT -= dt;
+    if (stepT <= 0) {
+      if (resolveStep()) stepT = 0.2;
+      else {
+        state = 'play';
+        if (score > save.best) { save.best = score; persist(); }
+        if (grid[0].every(Boolean)) { state = 'over'; overlayT = 0; SFX.over(); }
+      }
+    }
+  }
+}
+
+function tile(x, y, s, v, pop = 0) {
+  const [c1, c2] = colorFor(v), k = 1 + pop * 0.15, ss = s * k, xx = x - (ss - s) / 2, yy = y - (ss - s) / 2;
+  ctx.fillStyle = c2; rr(xx + 3, yy + 5, ss - 6, ss - 6, 14); ctx.fill();
+  ctx.fillStyle = c1; rr(xx + 3, yy + 3, ss - 6, ss - 10, 14); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; rr(xx + 12, yy + 8, ss - 24, 8, 4); ctx.fill();
+  const l = label(v); text(l, xx + ss / 2, yy + ss / 2, l.length > 3 ? 20 : l.length > 2 ? 24 : 28, '#fff', 'center', 'rgba(0,0,0,0.25)');
+}
+function button(x, y, w, h, label2, color, fn) {
+  ctx.save(); const pl = 1 + Math.sin(time * 5) * 0.035; ctx.translate(x + w / 2, y + h / 2); ctx.scale(pl, pl);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; rr(-w / 2, -h / 2 + 4, w, h, h / 2); ctx.fill(); ctx.fillStyle = color; rr(-w / 2, -h / 2, w, h, h / 2); ctx.fill();
+  text(label2, 0, 1, 20, '#fff'); ctx.restore(); hits.push({ x, y, w, h, fn: () => { SFX.click(); fn(); } });
+}
+function draw() {
+  hits = [];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#2a1f3d'; ctx.fillRect(0, 0, vw, vh);
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * ox, dpr * oy);
+  const e = EXT(); const bg = ctx.createLinearGradient(0, e.y, 0, e.y + e.h); bg.addColorStop(0, '#3a2a5e'); bg.addColorStop(1, '#1f1630'); ctx.fillStyle = bg; ctx.fillRect(e.x, e.y, e.w, e.h);
+  text('BEST ' + save.best + '  ·  TOP TILE ' + label(save.bestTile), W / 2, 34, 13, 'rgba(255,255,255,0.65)', 'center', null, 800);
+  text(String(Math.round(shownScore)), W / 2, 72, 40, '#fff', 'center', '#6b3fd1');
+  rr(14, 18, 44, 40, 20); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill(); text(save.muted ? '🔇' : '🔊', 36, 39, 18, '#fff');
+  hits.push({ x: 14, y: 18, w: 44, h: 40, fn: () => { save.muted = !save.muted; persist(); } });
+  // next
+  text('NEXT', W / 2 - 72, 128, 13, 'rgba(255,255,255,0.7)', 'center', null, 800);
+  tile(W / 2 - 34, 100, 58, nextV);
+  ctx.globalAlpha = 0.55; tile(W / 2 + 34, 108, 42, afterV); ctx.globalAlpha = 1;
+
+  rr(BX - 8, BY - 8, COLS * CELL + 16, ROWS * CELL + 16, 18); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fill();
+  const aim = aimCol >= 0 ? aimCol : -1;
+  for (let c = 0; c < COLS; c++) {
+    const sx = c === shakeCol && shakeT > 0 ? Math.sin(time * 70) * 4 : 0;
+    ctx.fillStyle = c === aim ? 'rgba(255,255,255,0.12)' : (c % 2 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.07)');
+    rr(BX + c * CELL + 2 + sx, BY, CELL - 4, ROWS * CELL, 12); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(255,90,90,0.5)'; ctx.setLineDash([8, 6]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(BX, BY + CELL); ctx.lineTo(BX + COLS * CELL, BY + CELL); ctx.stroke(); ctx.setLineDash([]);
+  for (const b of blocks) tile(BX + b.dx * CELL, BY + b.dy * CELL, CELL, b.v, b.pop);
+  if (aim >= 0 && state === 'play') { const r = lowestEmpty(aim); if (r >= 0) { ctx.globalAlpha = 0.35; tile(BX + aim * CELL, BY + r * CELL, CELL, nextV); ctx.globalAlpha = 1; } }
+  for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life * 2); ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  for (const p of popups) { ctx.globalAlpha = Math.min(1, p.life * 2); text(p.txt, p.x, p.y, 20, '#ffd23f', 'center', '#6b3fd1'); }
+  ctx.globalAlpha = 1;
+  if (!blocks.length) text('Tap a column to drop. Same numbers merge!', W / 2, BY + ROWS * CELL + 34, 14, '#9ff0b0', 'center', null, 800);
+  else text('Columns full = game over · line marks the top', W / 2, BY + ROWS * CELL + 34, 12, 'rgba(255,255,255,0.45)', 'center', null, 700);
+
+  if (state === 'over') {
+    const a = Math.min(1, overlayT * 3); ctx.globalAlpha = a * 0.6; ctx.fillStyle = '#120b1f'; ctx.fillRect(e.x, e.y, e.w, e.h); ctx.globalAlpha = a;
+    const py = 230 + (1 - a) * 30; rr(40, py, 340, 280, 28); ctx.fillStyle = '#fff'; ctx.fill();
+    text('BOARD FULL', W / 2, py + 50, 28, '#6b3fd1'); text(String(score), W / 2, py + 110, 52, '#2a1f3d');
+    text(score >= save.best && score > 0 ? 'NEW BEST!' : 'Best: ' + save.best, W / 2, py + 160, 18, score >= save.best && score > 0 ? '#2fae5a' : '#6a6a8a', 'center', null, 800);
+    if (overlayT > 0.6) button(W / 2 - 110, py + 200, 220, 54, 'PLAY AGAIN', '#2fae5a', newGame);
+    ctx.globalAlpha = 1;
+  }
+}
+newGame();
+let last = performance.now();
+function frame(now) { const dt = Math.min(0.033, (now - last) / 1000); last = now; update(dt); draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+window.__game = { state: () => state, drop: dropIn, score: () => score, grid: () => grid.map(r => r.map(b => b ? b.v : 0)) };
+})();
+</script>
+</body>
+</html>
