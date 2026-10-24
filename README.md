@@ -10,7 +10,7 @@ Play them all: https://retafos.github.io/playable-games/
 
 | Game | Genre | Longevity |
 |------|-------|-----------|
-| [Veilword](veilword/) | Word puzzle | Worlds & levels, twist modes, 8 themes, pass-and-play versus |
+| [Veilword](veilword/) | Twist word puzzle | Twist of the Day, 12-twist Twist Lab, 1000-level Twist Voyage, 8 themes, pass-and-play versus |
 | [Bounty Tides](bounty-tides/) | Card battler | Deck building, 10-island voyages that loop harder, market, bounties |
 | [Snowball Run](snowball-run/) | Runner | Endless levels, coins, upgrades shop, 6 skins, 4 themes |
 | [Army Run](army-run/) | Crowd runner | Endless levels, enemy squads, stair multipliers, upgrades |

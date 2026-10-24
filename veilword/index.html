@@ -113,6 +113,21 @@ svg{display:block}
 .hero .row2{display:flex;gap:8px}
 .hero .cta{flex:1;background:#fff;color:#16463d;box-shadow:0 4px 0 rgba(0,0,0,.25)}
 .hero .cta.ghost{flex:0 0 auto;background:rgba(0,0,0,.2);color:#fff;box-shadow:none}
+.voycard{display:flex;align-items:center;gap:14px;text-align:left;width:100%;border-radius:18px;padding:14px 16px;color:#fff;border:0;background:linear-gradient(140deg,var(--hit-dark),var(--hit))}
+.voycard .lv{display:grid;place-items:center;min-width:58px;height:58px;border-radius:14px;background:rgba(0,0,0,.2);font-family:var(--display);font-size:24px;line-height:1}
+.voycard .lv small{font-family:inherit;font-size:9px;letter-spacing:.08em;opacity:.8}
+.voycard .vt{flex:1;display:grid;gap:3px;min-width:0}
+.voycard .vt b{font-weight:900;font-size:16px}
+.voycard .vt span{font-size:12.5px;opacity:.9}
+.voycard .go{font-weight:900;background:#fff;color:#16463d;border-radius:12px;padding:8px 12px;font-size:14px}
+.mcard.feature{grid-column:1 / -1;background:linear-gradient(120deg,var(--glow),var(--stage))}
+.labgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:6px 0 4px}
+.labgrid button{display:flex;gap:10px;align-items:center;text-align:left;background:var(--stage2);border:1px solid var(--line);border-radius:14px;padding:10px;color:var(--fg)}
+.labgrid .ic{font-size:22px}
+.labgrid b{display:block;font-size:13.5px}
+.labgrid span{display:block;font-size:11px;color:var(--muted);line-height:1.3}
+.plainlink{background:none;border:0;color:var(--muted);font-size:13px;padding:6px 0 2px;text-align:center}
+.plainlink b{color:var(--fg)}
 .ladder{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .rung{background:var(--stage);border:1px solid var(--line);border-radius:14px;padding:12px 6px;display:grid;justify-items:center;gap:4px}
 .rung .n{font-family:var(--display);font-size:26px;line-height:1}
@@ -331,14 +346,19 @@ div.srow{cursor:default}
     <div class="daily" id="daily" hidden></div>
     <div class="hero" id="hero"></div>
     <section class="stack" style="gap:10px">
-      <div class="sechead"><span class="eyebrow">Word Ladders</span><span class="eyebrow" style="letter-spacing:.04em;text-transform:none">Worlds and twists</span></div>
+      <div class="sechead"><span class="eyebrow">Challenge modes</span><span class="eyebrow" style="letter-spacing:.04em;text-transform:none">Pick your twist</span></div>
+      <div class="modegrid" id="modegrid"></div>
+    </section>
+    <section class="stack" style="gap:10px">
+      <div class="sechead"><span class="eyebrow">Twist Voyage</span><span class="eyebrow" style="letter-spacing:.04em;text-transform:none">1000 levels, new twists every world</span></div>
+      <button class="voycard" id="voyCard"></button>
+    </section>
+    <section class="stack" style="gap:10px">
+      <div class="sechead"><span class="eyebrow">Word Ladders</span><span class="eyebrow" style="letter-spacing:.04em;text-transform:none">Shorter and longer words</span></div>
       <div class="ladder" id="ladder"></div>
     </section>
     <button class="vspromo" data-go="versusScreen"><span class="vs">VS</span><div><b>Challenge a friend</b><span>Pass the phone. Same word. Fewest guesses wins.</span></div></button>
-    <section class="stack" style="gap:10px">
-      <span class="eyebrow">Challenge modes</span>
-      <div class="modegrid" id="modegrid"></div>
-    </section>
+    <button class="plainlink" id="plainClassic">Just want plain rules? <b>Play Classic, no twist ›</b></button>
   </div>
 </div>
 
@@ -462,7 +482,9 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 
 /* ---------- data ---------- */
 const MODES={
-  classic:{name:"Endless Classic",hint:"Random 5-letter words, no levels. Never the same word twice.",mini:"hnmmh"},
+  classic:{name:"Classic",hint:"Plain rules, no twist. Random 5-letter words.",mini:"hnmmh"},
+  daily:{name:"Twist of the Day",hint:"A new twist every day. First win of the day pays +5 bonus coins.",mini:"rhnhr"},
+  lab:{name:"Twist Lab",hint:"Play any of the 12 twists whenever you like.",mini:"hrndh"},
   veiled:{name:"Veiled",hint:"A red veil hides the colors on some squares. You see the letter, not the clue.",mini:"hrnrm"},
   tally:{name:"Tally",hint:"No colored tiles. You only get counts: right spot, wrong spot, not in word.",mini:"ddhnr"},
   fade:{name:"Fade",hint:"Colors show on your latest guess only. Older rows go dark, so remember them.",mini:"ddhnm"},
@@ -503,8 +525,8 @@ const TW_ORDER=["starter","rush","fewer","veiled","blind","theme","fade","locked
 const WORLD_NAMES=["Sunny Shallows","Fog Isles","Clocktower Cove","Desert of Echoes","Glass Lagoon","Ember Peaks","Frost Harbor","Mirror Marsh","Thunder Reef","Lantern Bazaar","Moonlit Ruins","Coral Kingdom","Whisper Woods","Iron Canyon","Starfall Steppe","Velvet Vault","Tidepool Town","Ash Archipelago","Sapphire Spires","Crown Citadel"];
 const ROMAN=["","","II","III","IV","V","VI"];
 const worldName=w=>WORLD_NAMES[w%20]+(w>=20?" "+ROMAN[Math.floor(w/20)+1]:"");
-const twistFor=(t,w)=>{let k=TW_ORDER[w%TW_ORDER.length];if(k==="theme"&&TRACKS[t].len!==5)k="fewer";return k;};
-const isTwistLevel=i=>i%10===9;
+const twistFor=(t,w,i)=>{const pool=TW_ORDER.slice(0,Math.min(TW_ORDER.length,3+w*2));let k=i==null?TW_ORDER[w%TW_ORDER.length]:pool[(Math.floor(i/2)+w)%pool.length];if(k==="theme"&&TRACKS[t].len!==5)k="fewer";return k;};
+const isTwistLevel=i=>i>=3&&(i%2===1||i%10===9);
 function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 const TRACK_WORDS={};
 for(const id in TRACKS){const n=TRACKS[id].len,rnd=mulberry(9001+n),seq=[];
@@ -602,23 +624,33 @@ function renderHome(){
     d.innerHTML='<span class="coin">C</span><span class="txt"><b>Daily reward</b><span>Come back every day for free coins.</span></span><button class="cta gold" id="claimDaily">+'+DAILY+' Claim</button>';
     $("claimDaily").onclick=()=>{wallet.daily=today();wallet.coins+=DAILY;save.wallet();sfx.coin();toast("+"+DAILY+" coins");renderHome();refreshCommon();};}
   else d.hidden=true;
-  const C=TRACKS.c5.count,n=nextIn("c5"),dn=doneIn("c5"),all=dn>=C,w=Math.floor(n/10),tw=isTwistLevel(n)?TWISTS[twistFor("c5",w)]:null;
-  $("hero").innerHTML='<div class="tiles" aria-hidden="true"><i>W</i><i>O</i><i>R</i><i>D</i></div>'+
-    '<span class="eyebrow">Classic Voyage · World '+(w+1)+' · '+worldName(w)+'</span><h2>'+(all?"All done":"Level "+(n+1))+'</h2>'+
-    (tw?'<span class="twbadge hero-tw">'+tw.icon+' Twist level: '+tw.name+'</span>':'')+
-    '<div class="prog"><div class="bar" aria-hidden="true"><b style="width:'+(dn/C*100)+'%"></b></div><span>'+dn+' / '+C+'</span></div>'+
-    '<div class="row2"><button class="cta" id="heroPlay">'+(dn?"▶ Continue":"▶ Play")+'</button><button class="cta ghost" id="heroMap">Levels</button></div>';
-  $("heroPlay").onclick=()=>startLevel("c5",n);
-  $("heroMap").onclick=()=>openLevels("c5");
+  const dt=TWISTS[dailyTwist()],ds=stats.daily,won=wallet.dailyWin===today();
+  $("hero").innerHTML='<div class="tiles" aria-hidden="true"><i>'+dt.icon+'</i><i>?</i><i>?</i></div>'+
+    '<span class="eyebrow">Twist of the Day · '+new Date().toLocaleDateString(undefined,{weekday:"long"})+'</span><h2>'+dt.name+'</h2>'+
+    '<p style="margin:0;font-size:14px;line-height:1.4;opacity:.92">'+dt.desc+'</p>'+
+    '<span class="twbadge hero-tw">'+(won?'✓ Today\'s bonus collected':'First win today: +5 bonus coins')+'</span>'+
+    '<div class="row2"><button class="cta" id="heroPlay">▶ Play today\'s twist</button></div>';
+  $("heroPlay").onclick=()=>startFree("daily");
+  const g=$("modegrid");g.innerHTML="";
+  for(const k of ["veiled","tally","fade","rush","mystery","lab"]){const s=stats[k];const b=document.createElement("button");b.className="mcard"+(k==="lab"?" feature":"");
+    b.innerHTML=miniTiles(MODES[k].mini)+'<h3>'+MODES[k].name+'</h3><p>'+MODES[k].hint+'</p><span class="best">'+(k==="lab"?"12 twists to master ›":s?"Best streak "+s.best+" · "+s.wins+" wins":"Not played yet")+'</span>';
+    b.onclick=()=>k==="lab"?openLab():startFree(k);g.appendChild(b);}
+  const C=TRACKS.c5.count,n=nextIn("c5"),dn=doneIn("c5"),w=Math.floor(n/10),tw=isTwistLevel(n)?TWISTS[twistFor("c5",w,n)]:null;
+  $("voyCard").innerHTML='<span class="lv"><small>LEVEL</small>'+(dn>=C?"✓":n+1)+'</span><span class="vt"><b>World '+(w+1)+' · '+worldName(w)+'</b><span>'+(tw?tw.icon+' Next: '+tw.name:'Next: warm-up level')+' · '+dn+'/'+C+' done</span></span><span class="go">'+(dn?"Continue":"Play")+'</span>';
+  $("voyCard").onclick=()=>openLevels("c5");
   const lad=$("ladder");lad.innerHTML="";
   for(const t of ["l3","l4","l6","l7"]){const T=TRACKS[t],dn=doneIn(t);const b=document.createElement("button");b.className="rung";
     b.innerHTML='<span class="n">'+T.len+'</span><span class="l">letters</span><span class="mbar"><b style="width:'+(dn/T.count*100)+'%"></b></span><span class="p">'+dn+'/'+T.count+'</span>';
     b.setAttribute("aria-label",T.len+" letter ladder, "+dn+" of "+T.count+" done");
     b.onclick=()=>openLevels(t);lad.appendChild(b);}
-  const g=$("modegrid");g.innerHTML="";
-  for(const k of ["classic","veiled","tally","fade","rush","mystery"]){const s=stats[k];const b=document.createElement("button");b.className="mcard";
-    b.innerHTML=miniTiles(MODES[k].mini)+'<h3>'+MODES[k].name+'</h3><p>'+MODES[k].hint+'</p><span class="best">'+(s?"Best streak "+s.best+" · "+s.wins+" wins":"Not played yet")+'</span>';
-    b.onclick=()=>startFree(k);g.appendChild(b);}
+  $("plainClassic").onclick=()=>startFree("classic");
+}
+function openLab(){
+  $("panel").innerHTML='<h2>Twist Lab</h2><p>Pick a twist and play a random 5-letter word with it.</p><div class="labgrid">'+
+    TW_ORDER.map(k=>'<button data-tw="'+k+'"><span class="ic">'+TWISTS[k].icon+'</span><span><b>'+TWISTS[k].name+'</b><span>'+TWISTS[k].desc+'</span></span></button>').join("")+
+    '</div><div class="actions"><button class="cta ghost" id="closeBtn">Close</button></div>';
+  openSheet();$("closeBtn").onclick=closeSheet;
+  $("panel").querySelectorAll("[data-tw]").forEach(b=>b.onclick=()=>{closeSheet();startFree("lab",b.dataset.tw);});
 }
 
 /* ---------- levels ---------- */
@@ -627,7 +659,7 @@ function openLevels(t){lvTrack=t;show("levelScreen");}
 $("lvBack").onclick=()=>show("homeScreen");
 function renderLevels(){
   const t=lvTrack,T=TRACKS[t],n=nextIn(t);
-  $("lvTitle").textContent=t==="c5"?"Classic Voyage":"Word Ladders";
+  $("lvTitle").textContent=t==="c5"?"Twist Voyage":"Word Ladders";
   $("lvCount").textContent=doneIn(t)+" / "+T.count+" · "+starsIn(t)+" ★";
   const seg=$("lvSeg");seg.hidden=t==="c5";seg.innerHTML="";
   if(t!=="c5")for(const id of ["l3","l4","l6","l7"]){const b=document.createElement("button");b.textContent=TRACKS[id].len+" letters";
@@ -637,13 +669,13 @@ function renderLevels(){
   for(let w=0;w<=lastW;w++){const box=document.createElement("section");box.className="band world"+(w>curW?" ahead":"");
     const tw=TWISTS[twistFor(t,w)];let got=0;for(let i=w*10;i<w*10+10;i++)got+=tp(t)[i]||0;
     box.innerHTML='<div class="bandhead"><b>'+(w+1)+'. '+worldName(w)+'</b><span>'+got+' / 30 ★</span></div>'+
-      '<div class="twline"><span class="twbadge">'+tw.icon+' '+tw.name+'</span><span>Level '+(w*10+10)+': '+tw.desc+'</span></div>';
+      '<div class="twline"><span class="twbadge">'+[...new Set([...Array(10).keys()].map(k=>w*10+k).filter(isTwistLevel).map(i=>TWISTS[twistFor(t,w,i)].icon))].join(' ')+'</span><span>Twists in this world: '+[...new Set([...Array(10).keys()].map(k=>w*10+k).filter(isTwistLevel).map(i=>TWISTS[twistFor(t,w,i)].name))].join(', ')+'</span></div>';
     const grid=document.createElement("div");grid.className="lvgrid";
     for(let i=w*10;i<w*10+10;i++){const st=tp(t)[i];const btn=document.createElement("button");btn.className="lv"+(isTwistLevel(i)?" twist":"");
       const open=st||i<=n;
       if(st)btn.classList.add("done");else if(i===n)btn.classList.add("current");else btn.classList.add("locked");
-      btn.innerHTML=(isTwistLevel(i)?'<em>'+tw.icon+'</em>':'')+(i+1)+(st?'<small>'+"★".repeat(st)+'</small>':"");
-      btn.setAttribute("aria-label","Level "+(i+1)+(isTwistLevel(i)?", twist: "+tw.name:"")+(st?", "+st+" stars":open?"":", locked"));
+      const lt=isTwistLevel(i)?TWISTS[twistFor(t,w,i)]:null;btn.innerHTML=(lt?'<em>'+lt.icon+'</em>':'')+(i+1)+(st?'<small>'+"★".repeat(st)+'</small>':"");
+      btn.setAttribute("aria-label","Level "+(i+1)+(lt?", twist: "+lt.name:"")+(st?", "+st+" stars":open?"":", locked"));
       btn.onclick=()=>{if(!open){toast("Finish level "+(n+1)+" first");sfx.bad();return;}startLevel(t,i);};
       grid.appendChild(btn);}
     box.appendChild(grid);bands.appendChild(box);}
@@ -711,14 +743,17 @@ $("resetBtn").onclick=()=>{
 };
 
 /* ---------- game core ---------- */
-function startLevel(t,i){begin({kind:"level",track:t,level:i,mode:"classic",len:TRACKS[t].len,answer:TRACK_WORDS[t][i],twist:isTwistLevel(i)?twistFor(t,Math.floor(i/10)):null});}
-function startFree(mode){begin({kind:"free",mode,len:mode==="classic"?5:undefined});}
+function startLevel(t,i){begin({kind:"level",track:t,level:i,mode:"classic",len:TRACKS[t].len,answer:TRACK_WORDS[t][i],twist:isTwistLevel(i)?twistFor(t,Math.floor(i/10),i):null});}
+function startFree(mode,tw){begin({kind:"free",mode,twist:tw,len:(mode==="classic"||mode==="daily"||mode==="lab")?5:undefined});}
+const DAILY_POOL=["veiled","tally","fade","mirror","liar","double","locked","blind","starter","theme","fewer","rush"];
+function dailyTwist(){const d=new Date(),n=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()))/864e5);return DAILY_POOL[n%DAILY_POOL.length];}
 function startVersus(n1,n2,len){begin({kind:"versus",mode:"classic",len,names:[n1,n2]});}
 function begin(o){
   clearInterval(S.tick);closeSheet();$("passcover").hidden=true;
   let len=o.len||pref.len,twist=o.twist||null;
   if(o.mode==="mystery"){const pool=["veiled","tally","fade","rush",...TW_ORDER];twist=pool[Math.floor(Math.random()*pool.length)];len=twist==="theme"?5:3+Math.floor(Math.random()*5);}
-  else if(o.kind==="free"&&o.mode!=="classic")twist=o.mode;
+  else if(o.mode==="daily")twist=dailyTwist();
+  else if(o.kind==="free"&&["veiled","tally","fade","rush"].includes(o.mode))twist=o.mode;
   const realMode=["veiled","tally","fade","rush"].includes(twist)?twist:"classic";
   let answer=o.answer,answer2=null,category=null;
   if(twist==="theme"){const pick=o.kind==="level"?THEME_LIST[(o.level*31+7)%THEME_LIST.length]:THEME_LIST[Math.floor(Math.random()*THEME_LIST.length)];answer=pick[0];category=pick[1];len=5;}
@@ -738,7 +773,7 @@ function begin(o){
 }
 function rushTick(){if(S.done)return;S.timeLeft--;renderStatus();if(S.timeLeft<=10&&S.timeLeft>0)tone(880,.05,"square",0,.3);if(S.timeLeft<=0)finish(false,"Time's up.");}
 $("backBtn").onclick=()=>{sfx.tap();if(S.kind==="level")openLevels(S.track);else if(S.kind==="versus")show("versusScreen");else show("homeScreen");};
-$("newBtn").onclick=()=>{if(S.kind==="level")startLevel(S.track,S.level);else if(S.kind==="versus")startVersus(S.players[0].name,S.players[1].name,S.len);else startFree(S.mode);};
+$("newBtn").onclick=()=>{if(S.kind==="level")startLevel(S.track,S.level);else if(S.kind==="versus")startVersus(S.players[0].name,S.players[1].name,S.len);else startFree(S.mode,S.mode==="lab"?S.twist:undefined);};
 
 function score(guess,ans){
   const res=Array(guess.length).fill("miss"),pool={};
@@ -765,7 +800,7 @@ function renderChrome(){
   const vs=S.kind==="versus";
   if(S.kind==="level"){$("gTitle").textContent=S.track==="c5"?"Level "+(S.level+1):TRACKS[S.track].len+" letters · "+(S.level+1);$("gSub").textContent=worldName(Math.floor(S.level/10))+(S.twist?" · "+TWISTS[S.twist].name:"");}
   else if(vs){const p=S.players[S.turn];$("gTitle").innerHTML='<span class="turnchip" style="background:var(--p'+(S.turn+1)+')">'+esc(p.name)+'</span>';$("gSub").textContent="Versus · round "+Math.min(S.R,p.guesses.length+1)+" of "+S.R;}
-  else{$("gTitle").textContent=MODES[S.mode].name;$("gSub").textContent=(S.mode==="mystery"&&S.twist?TWISTS[S.twist].name+" · ":"")+S.len+" letters";}
+  else{$("gTitle").textContent=MODES[S.mode].name;$("gSub").textContent=((S.mode==="mystery"||S.mode==="daily"||S.mode==="lab")&&S.twist?TWISTS[S.twist].name+" · ":"")+S.len+" letters";}
   const l=$("lens");l.innerHTML="";
   if(S.kind==="free"&&S.mode!=="mystery"&&S.mode!=="classic"){l.innerHTML='<span class="lbl">Letters</span>';
     for(let n=3;n<=7;n++){const b=document.createElement("button");b.className="len";b.textContent=n;b.setAttribute("aria-pressed",S.len===n);
@@ -882,7 +917,7 @@ function finish(won,why){
   if(S.kind==="level"){if(won){const p=tp(S.track);if(!p[S.level]){S.coinGain=S.twist?6:3;wallet.coins+=S.coinGain;save.wallet();}
       earned=starsFor(S.guesses.length,S.R);p[S.level]=Math.max(p[S.level]||0,earned);save.prog();}}
   else{const key=S.mode;const s=stats[key]||{played:0,wins:0,streak:0,best:0};s.played++;
-    if(won){s.wins++;s.streak++;s.best=Math.max(s.best,s.streak);if(S.kind!=="versus"){S.coinGain=2;wallet.coins+=2;save.wallet();}}else s.streak=0;stats[key]=s;save.stats();}
+    if(won){s.wins++;s.streak++;s.best=Math.max(s.best,s.streak);if(S.kind!=="versus"){S.coinGain=2;if(S.mode==="daily"&&wallet.dailyWin!==today()){wallet.dailyWin=today();S.coinGain+=5;}wallet.coins+=S.coinGain;save.wallet();}}else s.streak=0;stats[key]=s;save.stats();}
   won?sfx.win():sfx.lose();
   render();refreshCommon();setTimeout(()=>showResult(why,earned),S.realMode==="veiled"?700:250);
 }
@@ -909,7 +944,7 @@ function showResult(why,earned){
     '<textarea class="sharebox" id="shareBox" readonly hidden></textarea>'+adSlot();
   openSheet();
   $("againBtn").onclick=()=>{closeSheet();
-    if(S.kind==="level"){if(!S.won)startLevel(S.track,S.level);else if(last)openLevels(S.track);else startLevel(S.track,S.level+1);}else startFree(S.mode);};
+    if(S.kind==="level"){if(!S.won)startLevel(S.track,S.level);else if(last)openLevels(S.track);else startLevel(S.track,S.level+1);}else startFree(S.mode,S.mode==="lab"?S.twist:undefined);};
   $("menuBtn").onclick=()=>{closeSheet();if(S.kind==="level")openLevels(S.track);else show("homeScreen");};
   $("shareBtn").onclick=()=>copyText(shareText());
 }
@@ -959,11 +994,11 @@ function showVersusResult(){
 function showHelp(){
   $("panel").innerHTML='<h2>How to play</h2><p>Guess the secret word. Every guess must be a real word, and the colors show how close you are.</p>'+
   '<div class="legend"><span><i class="sw" style="background:var(--hit)"></i>Right spot</span><span><i class="sw" style="background:var(--near)"></i>In word, wrong spot</span><span><i class="sw" style="background:var(--miss)"></i>Not in word</span><span><i class="sw" style="background:var(--veil)"></i>Veil</span></div>'+
-  '<ul class="mlist"><li><b>Classic Voyage</b><span>1,000 levels of 5-letter words in worlds of 10. Words get harder as you go. Fewer guesses earn more stars, and each new level gives 3 coins.</span></li>'+
-  '<li><b>Twist levels</b><span>Every 10th level changes the rules and pays 6 coins: '+TW_ORDER.map(k=>TWISTS[k].name).join(", ")+'.</span></li>'+
+  '<ul class="mlist"><li><b>Twist Voyage</b><span>1,000 levels of 5-letter words in worlds of 10. Words get harder as you go. Fewer guesses earn more stars, and each new level gives 3 coins.</span></li>'+
+  '<li><b>Twist levels</b><span>From level 4, every other level changes the rules and pays 6 coins. Each world unlocks new twists: '+TW_ORDER.map(k=>TWISTS[k].name).join(", ")+'.</span></li>'+
   '<li><b>Word Ladders</b><span>The same voyage with 3, 4, 6 and 7-letter words.</span></li>'+
   '<li><b>Endless Classic</b><span>Random 5-letter words with no levels, never repeated.</span></li>'+
-  '<li><b>Versus</b><span>Pass the phone and race a friend to the same word. Fewer rows wins. Same row is a draw.</span></li>'+
+  '<li><b>Twist of the Day</b><span>A new twist every day for everyone. Your first win of the day pays +5 bonus coins.</span></li><li><b>Twist Lab</b><span>Play any of the 12 twists on demand.</span></li><li><b>Versus</b><span>Pass the phone and race a friend to the same word. Fewer rows wins. Same row is a draw.</span></li>'+
   ["veiled","tally","fade","rush","mystery"].map(k=>'<li><b>'+MODES[k].name+'</b><span>'+MODES[k].hint+'</span></li>').join("")+
   '<li><b>Hints</b><span>Spend '+HINT_COST+' coins and tap a square to reveal its letter.</span></li></ul>'+
   '<div class="actions"><button class="cta" id="closeBtn">Got it</button></div>';
