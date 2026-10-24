@@ -192,9 +192,12 @@ linear-gradient(180deg,#3b3238 0%,#2b2429 45%,#1d181c 100%)}
 .starbtn{position:relative;display:grid;place-items:center;height:170px;width:100%;border-radius:20px;overflow:hidden;background:radial-gradient(70% 80% at 50% 70%,#e2a65c,#9a5f2c 65%,#6e4123);border:3px solid #4a2a12;box-shadow:inset 0 -10px 30px rgba(0,0,0,.25)}
 .crystal{width:130px;height:130px;filter:drop-shadow(0 0 14px rgba(159,243,207,.6));transition:transform .06s}
 .starbtn:active .crystal,.crystal.tapd{transform:scale(.94)}
-.miner{position:absolute;left:16%;bottom:22px;font-size:40px;transform-origin:70% 90%;animation:swing 1.1s ease-in-out infinite}
+.miner{position:absolute;left:calc(50% - 106px);bottom:26px;width:64px;height:64px;display:block;transform-origin:14% 88%;filter:drop-shadow(0 3px 0 rgba(0,0,0,.25));transform:rotate(-32deg);animation:strike 1.1s ease-in infinite;pointer-events:none;z-index:2}
 @keyframes swing{50%{transform:rotate(-14deg)}}
-.miner.fast{animation-duration:.25s}
+.miner.fast{animation-duration:.3s}
+.miner.whack{animation:whack .2s ease-in 1}
+@keyframes strike{0%,55%{transform:rotate(-32deg)}78%{transform:rotate(14deg)}86%{transform:rotate(8deg)}100%{transform:rotate(-32deg)}}
+@keyframes whack{0%{transform:rotate(-32deg)}55%{transform:rotate(14deg)}100%{transform:rotate(-20deg)}}
 .starbtn .lbl{position:absolute;top:8px;left:12px;font-family:var(--disp);font-size:15px;letter-spacing:.03em;color:#fff1d6;text-shadow:0 2px 0 #4a2a12}
 .starbtn .tv{position:absolute;bottom:8px;right:12px;font-size:12px;color:#fff1d6;background:rgba(63,36,17,.6);border-radius:8px;padding:2px 8px}
 .album{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px}
@@ -1192,7 +1195,7 @@ function vMine(){
   L(()=>{if(lockedIdx>0&&prodUnlocked(S,lockedIdx)){lockedIdx=-1;setTimeout(render,0);}});
   return `<div class="stack">
     <div class="skills">${sk}<button class="adbtn" id="adP" data-h="${ad}"><b>2x GEMS</b><small></small></button></div>
-    <button class="starbtn" id="starBtn" data-h="${star}" aria-label="Tap the Gem Rock"><span class="lbl">The Gem Rock</span><span class="miner" id="miner">⛏️</span>${CRYSTAL}<span class="tv">${IC.sh} <span id="tapv"></span> a tap</span></button>
+    <button class="starbtn" id="starBtn" data-h="${star}" aria-label="Tap the Gem Rock"><span class="lbl">The Gem Rock</span><span class="miner" id="miner"><svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true"><line x1="14" y1="88" x2="68" y2="34" stroke="#4a2a12" stroke-width="13" stroke-linecap="round"/><line x1="14" y1="88" x2="68" y2="34" stroke="#b9773a" stroke-width="8" stroke-linecap="round"/><line x1="20" y1="80" x2="52" y2="48" stroke="#e0a565" stroke-width="2.5" stroke-linecap="round" opacity=".7"/><path d="M30 12 Q78 14 96 66" fill="none" stroke="#3b3f47" stroke-width="15" stroke-linecap="round"/><path d="M30 12 Q78 14 96 66" fill="none" stroke="#a9b6c4" stroke-width="10" stroke-linecap="round"/><path d="M38 13 Q74 17 89 54" fill="none" stroke="#eef3f8" stroke-width="3" stroke-linecap="round" opacity=".8"/><rect x="58" y="24" width="20" height="20" rx="4" transform="rotate(45 68 34)" fill="#6b4a2a" stroke="#4a2a12" stroke-width="3"/></svg></span>${CRYSTAL}<span class="tv">${IC.sh} <span id="tapv"></span> a tap</span></button>
     ${multBar()}${rows}
     <p class="note">Each mine doubles its output every 25 levels. The bar under its name shows how close the next doubling is.</p></div>`;
 }
@@ -1201,6 +1204,7 @@ function tapStar(e){
   const r=Math.random();if(r<0.002){v*=1000;cls="big";txt="STARBURST x1000  +"+F(v);sfx.prize();}else if(r<0.002+m.crit){v*=10;cls="r";txt="CRIT +"+F(v);sfx.crit();}else{txt="+"+F(v);sfx.tap();}
   S.shards+=v;S.life+=v;S.st.taps++;
   const c=$("crystal");if(c){c.classList.remove("tapd");void c.offsetWidth;c.classList.add("tapd");setTimeout(()=>c.classList.remove("tapd"),80);}
+  const mn=$("miner");if(mn&&!mn.classList.contains("fast")){mn.classList.remove("whack");void mn.offsetWidth;mn.classList.add("whack");clearTimeout(mn._t);mn._t=setTimeout(()=>mn.classList.remove("whack"),220);}
   const b=$("starBtn").getBoundingClientRect(),s=$("scene").getBoundingClientRect();
   const sp=document.createElement("span");sp.className="fl "+cls;sp.textContent=txt;sp.style.position="fixed";sp.style.left=(e&&e.clientX?e.clientX:b.left+b.width/2)-30+"px";sp.style.top=(e&&e.clientY?e.clientY:b.top+b.height/2)-30+"px";sp.style.zIndex=9;document.body.appendChild(sp);setTimeout(()=>sp.remove(),900);
 }
