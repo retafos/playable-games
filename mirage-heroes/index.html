@@ -560,7 +560,7 @@ const QPOOL=[
 const GIFTS=[{s:20},{k:3},{s:30},{k:5},{s:40},{sc:"fury"},{s:100,k:10}];
 /* Bonus packs (not sold in this edition). */
 const PACKS=[
-  {id:"noads",n:"Remove ads forever",d:"Every ad reward arrives instantly, with no watching. Also doubles Genie Dust from wishes and every daily gift.",usd:4.99,give:{noAds:1}},
+  {id:"noads",n:"Bonus pack",d:"Bonus pack. Also doubles Genie Dust from wishes and every daily gift.",usd:4.99,give:{noAds:1}},
   {id:"starter",n:"Starter Pack",d:"300 gold coins, 30 keys and 3 Scrolls of Fury.",usd:1.99,give:{s:300,k:30,sc:{fury:3}},once:1},
   {id:"s80",n:"Handful of Coins",d:"80 gold coins.",usd:0.99,give:{s:80}},
   {id:"s450",n:"Bag of Coins",d:"450 gold coins and 10 keys.",usd:4.99,give:{s:450,k:10}},
@@ -1147,9 +1147,9 @@ $("bQuest").onclick=()=>go("more","quests");
 $("bRift").onclick=()=>{if(NOW()>=S.riftAt)startRift();else toast("The portal opens in "+T((S.riftAt-NOW())/1000));};
 $("bTerror").onclick=()=>go("more","terror");
 $("bCourier").onclick=()=>{const now=NOW(),m=mults(S,now),v=Math.max(200,prodTotal(S,m)*1200);
-  sheet(`<div class="prize"><span class="big">🦜</span></div><h2>The Parrot Messenger brought a gift</h2><p>${IC.sh} ${F(v)} gems, about 20 minutes of work.</p><div class="acts two"><button class="buy wide" id="cTake"><small>TAKE IT</small></button><button class="buy wide teal" id="cAd"><small>${S.noAds?"DOUBLE IT":"WATCH AD"}</small><span class="c">x2</span></button></div>`);
+  sheet(`<div class="prize"><span class="big">🦜</span></div><h2>The Parrot Messenger brought a gift</h2><p>${IC.sh} ${F(v)} gems, about 20 minutes of work.</p><div class="acts"><button class="buy wide" id="cTake"><small>TAKE IT</small></button></div>`);
   $("cTake").onclick=()=>{const g=courierClaim(S,NOW(),false);closeSheet();sfx.prize();toast("+"+F(g)+" gems");};
-  $("cAd").onclick=()=>{closeSheet();watchAd(()=>{const g=courierClaim(S,NOW(),true);sfx.prize();toast("+"+F(g)+" gems");});};};
+};
 document.addEventListener("pointerdown",()=>{lastInput=NOW();},true);
 document.addEventListener("keydown",()=>{lastInput=NOW();},true);
 
@@ -1257,7 +1257,7 @@ function vWish(){
   const wk=H(()=>{const g2=dustFor(S,NOW());if(g2<=0){toast("Reach Day 30 to make a wish");return;}
     sheet(`<div class="prize"><span class="big">🪔</span></div><h2>Rub the lamp and make a wish?</h2><p>You earn ${IC.du} <b style="color:var(--ink)">${F(g2)} Genie Dust</b>. Your gems, mines, upgrades and hero levels reset, and you start again from Day ${Math.min(1+2*(S.bless.start||0),Math.max(1,S.best-10))}.</p><p>You keep: your heroes and their stars, gold coins, keys, pets, mounts, scrolls, blessings and every Coin Shop upgrade.</p><div class="acts two"><button class="buy wide alt" id="wy"><small>MAKE THE WISH</small></button><button class="btn" id="wn">Not yet</button></div>`);
     $("wn").onclick=closeSheet;$("wy").onclick=()=>{const got=wish(S,NOW());closeSheet();lastNight=0;lastPartyKey="";sfx.prize();toast("+"+F(got)+" Genie Dust. Your heroes feel stronger.",3200);tick("made wish number "+S.wishes+" and gained "+F(got)+" Genie Dust","You");save();pushRank(true);render();};});
-  let h=`<div class="banner" style="background:linear-gradient(135deg,#3a2a7e,#21245e);border-color:#7a64d8"><span class="bi">🪔</span><span class="bt"><small>Genie Dust you will earn</small><b id="wg">${F(g)}</b><small id="wnote">${S.noAds?'x2 from Remove ads. ':''}${S.best<30?"Reach Day 30 to make your first wish.":"Best day this run: "+S.best+". Going further earns more."}</small></span><button class="buy alt" data-h="${wk}" ${g>0?"":"disabled"}><small>MAKE A</small><span class="c">WISH</span></button></div>
+  let h=`<div class="banner" style="background:linear-gradient(135deg,#3a2a7e,#21245e);border-color:#7a64d8"><span class="bi">🪔</span><span class="bt"><small>Genie Dust you will earn</small><b id="wg">${F(g)}</b><small id="wnote">${S.best<30?"Reach Day 30 to make your first wish.":"Best day this run: "+S.best+". Going further earns more."}</small></span><button class="buy alt" data-h="${wk}" ${g>0?"":"disabled"}><small>MAKE A</small><span class="c">WISH</span></button></div>
   <div class="grid2"><div class="card"><small>Genie Dust to spend</small><b>${IC.du} ${F(S.dust)}</b></div><div class="card"><small>Dust collected bonus</small><b>+${F(DUST_BONUS*100*(S.dustLife||0))}% power</b></div></div>
   <p class="note">Every Genie Dust you ever collect adds ${DUST_BONUS*100}% to hero attack and mine output, even after you spend it. Spend it on blessings below for more.</p><div class="sec">Blessings</div>`;
   BLESS.forEach(b=>{const k=H(()=>{if(buyBless(S,b.id)){sfx.buy();render();}else toast(b.max&&(S.bless[b.id]||0)>=b.max?"This blessing is at its maximum":"Not enough Genie Dust");});
@@ -1278,7 +1278,7 @@ function vShop(){
   L((m,now)=>{const b=$("adS");if(b){const n=adStarsLeft(S,now);b.querySelector("small").textContent=n+" of "+AD_STARS_MAX+" left today";b.disabled=n<=0;}});
   let h=`<div class="sec">Chests</div><div class="grid2">${chest("free","🧰","Common Chest","Every 4h")}${chest("keys","📦","Crater Chest",IC.ky+" "+CHESTS.keys.costK)}${chest("rare","🎁","Rare Chest",IC.st+" "+CHESTS.rare.costS)}${chest("legend","👑","Legendary Chest",IC.st+" "+CHESTS.legend.costS)}</div>
   <p class="note">Common Chest: gems or a Normal or Rare hero. Crater: Normal to Epic. Rare: Rare to Legendary. Legendary Chest: Epic, Legendary or Ultra Legendary, and the only place to find Ember the Dragon and Astra the Star Child.</p>
-  <div class="row"><div class="ico">📺</div><div class="info"><b>Free gold coins</b><span class="sub">Watch a short ad for ${AD_STARS} coins.</span></div><button class="buy teal" id="adS" data-h="${adS}"><small></small><span class="c">${IC.st}${AD_STARS}</span></button></div>`;
+  <div class="row"><div class="ico">🎁</div><div class="info"><b>Free gold coins</b><span class="sub">Claim ${AD_STARS} coins, up to ${AD_STARS_MAX} times a day.</span></div><button class="buy teal" id="adS" data-h="${adS}"><small></small><span class="c">${IC.st}${AD_STARS}</span></button></div>`;
   let grp="";SHOPUP.forEach(u=>{if(u.grp!==grp){grp=u.grp;h+=`<div class="sec">${esc(grp)}</div>`;}const Lv=S.shop[u.id]||0,mx=u.max&&Lv>=u.max;
     const k=H(()=>{if(buyShop(S,u.id)){sfx.buy();render();}else toast(mx?"Already at its maximum":"Not enough gold coins");});
     h+=`<div class="row"><div class="ico" style="border-color:var(--gold)">${ico(u.e)}<span class="lv">Lv. ${Lv}</span></div><div class="info"><b>${esc(u.n)}</b><span class="sub">${esc(u.d)}</span></div><button class="buy" data-h="${k}" ${mx||S.stars<shopCost(u,Lv)?"disabled":""}><small>${mx?"MAX":"BUY"}</small><span class="c">${IC.st}${mx?"":FI(shopCost(u,Lv))}</span></button></div>`;});
@@ -1346,7 +1346,7 @@ function vQuests(){
   return `<div class="stack">${h}</div>`;
 }
 function vGift(){
-  const now=NOW(),g=giftState(S,now);const gx=S.noAds?2:1;let h=backBar("Daily gift")+`<p class="note">Come back every day for a gift. Missing a day starts the week again.${S.noAds?' <b class="ok">Remove ads doubles every gift.</b>':''}</p><div class="grid3">`;
+  const now=NOW(),g=giftState(S,now);const gx=S.noAds?2:1;let h=backBar("Daily gift")+`<p class="note">Come back every day for a gift. Missing a day starts the week again.</p><div class="grid3">`;
   GIFTS.forEach((r,i)=>{const got=i<g.idx||(!g.can&&i===g.idx),today=g.can&&i===g.idx;h+=`<div class="card" style="${today?"border-color:var(--gold);box-shadow:0 0 12px rgba(255,201,77,.4)":""}${got?";opacity:.55":""}"><small>Day ${i+1}</small><span class="big" style="font-size:30px">${r.sc?"📕":r.k&&!r.s?"🔑":"💰"}</span><b>${r.s?r.s*gx+" coins":""}${r.s&&r.k?" + ":""}${r.k?r.k*gx+" keys":""}${r.sc?(gx>1?gx+"x ":"")+"Scroll of Fury":""}</b>${got?'<small class="ok">Claimed</small>':""}</div>`;});
   const k=H(()=>{const r=claimGift(S,NOW());if(r){sfx.prize();sheet(`<div class="prize"><span class="big">🎁</span></div><h2>Daily gift</h2>${prizeHTML(r)}<button class="buy wide" id="x"><small>THANKS</small></button>`);$("x").onclick=()=>{closeSheet();render();};}});
   h+=`</div><button class="buy wide teal" data-h="${k}" ${g.can?"":"disabled"}><small>${g.can?"CLAIM TODAY'S GIFT":"COME BACK TOMORROW"}</small></button>`;
