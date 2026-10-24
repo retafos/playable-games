@@ -637,7 +637,7 @@ function renderHome(){
     b.innerHTML=miniTiles(MODES[k].mini)+'<h3>'+MODES[k].name+'</h3><p>'+MODES[k].hint+'</p><span class="best">'+(k==="lab"?"12 twists to master ›":s?"Best streak "+s.best+" · "+s.wins+" wins":"Not played yet")+'</span>';
     b.onclick=()=>k==="lab"?openLab():startFree(k);g.appendChild(b);}
   const C=TRACKS.c5.count,n=nextIn("c5"),dn=doneIn("c5"),w=Math.floor(n/10),tw=isTwistLevel(n)?TWISTS[twistFor("c5",w,n)]:null;
-  $("voyCard").innerHTML='<span class="lv"><small>LEVEL</small>'+(dn>=C?"✓":n+1)+'</span><span class="vt"><b>World '+(w+1)+' · '+worldName(w)+'</b><span>'+(tw?tw.icon+' Next: '+tw.name:'Next: warm-up level')+' · '+dn+'/'+C+' done</span></span><span class="go">'+(dn?"Continue":"Play")+'</span>';
+  $("voyCard").innerHTML='<span class="lv"><small>LEVEL</small>'+(dn>=C?"✓":n+1)+'</span><span class="vt"><b>World '+(w+1)+' · '+worldName(w)+'</b><span>'+(tw?tw.icon+' Next: '+tw.name+' + veil':'🎭 Next: veil level')+' · '+dn+'/'+C+' done</span></span><span class="go">'+(dn?"Continue":"Play")+'</span>';
   $("voyCard").onclick=()=>openLevels("c5");
   const lad=$("ladder");lad.innerHTML="";
   for(const t of ["l3","l4","l6","l7"]){const T=TRACKS[t],dn=doneIn(t);const b=document.createElement("button");b.className="rung";
@@ -745,7 +745,7 @@ $("resetBtn").onclick=()=>{
 
 /* ---------- game core ---------- */
 function startLevel(t,i){begin({kind:"level",track:t,level:i,mode:"classic",len:TRACKS[t].len,answer:TRACK_WORDS[t][i],twist:isTwistLevel(i)?twistFor(t,Math.floor(i/10),i):null});}
-function startFree(mode,tw){begin({kind:"free",mode,twist:tw,len:(mode==="classic"||mode==="daily"||mode==="lab")?5:undefined});}
+function startFree(mode,tw){begin({kind:"free",mode,twist:tw,len:(mode==="classic"||mode==="daily")?5:undefined});}
 const DAILY_POOL=["veiled","tally","fade","mirror","liar","double","locked","blind","starter","theme","fewer","rush"];
 function dailyTwist(){const d=new Date(),n=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()))/864e5);return DAILY_POOL[n%DAILY_POOL.length];}
 function startVersus(n1,n2,len){begin({kind:"versus",mode:"classic",len,names:[n1,n2]});}
@@ -763,7 +763,13 @@ function begin(o){
   let R=rowsFor(len);if(twist==="fewer")R=4;if(twist==="starter")R-=1;if(twist==="theme")R=5;if(twist==="double")R+=1;
   const shape=SHAPES[Math.floor(Math.random()*SHAPES.length)];
   const veil=[];for(let r=0;r<R;r++){veil.push([]);for(let c=0;c<len;c++)veil[r].push(realMode==="veiled"&&shape.f(r,c,R,len));}
-  S={kind:o.kind,track:o.track,level:o.level,mode:o.mode,realMode,twist,len,answer,answer2,category,R,guesses:[],cur:"",done:false,won:false,veil,shape:shape.name,
+  let lightVeil=null;
+  if(o.kind==="level"&&realMode!=="veiled"&&twist!=="tally"){
+    const lv=o.level,per=lv<10?1:lv<60?1:2,every=lv<10?2:1,extraLong=len>=6&&lv>=30?1:0;
+    for(let r=0;r<R-1;r++){if(r%every!==every-1&&every>1)continue;const n=Math.min(len-2,per+extraLong+(lv>=60&&r%2?-1:0));
+      const cols=[...Array(len).keys()].sort(()=>Math.random()-.5).slice(0,Math.max(1,n));cols.forEach(c=>veil[r][c]=true);}
+    lightVeil=every>1?"one square on every other row":(per+extraLong>1?"up to "+(per+extraLong)+" squares per row":"one square per row");}
+  S={kind:o.kind,track:o.track,level:o.level,mode:o.mode,realMode,twist,lightVeil,len,answer,answer2,category,R,guesses:[],cur:"",done:false,won:false,veil,shape:shape.name,
      timeLeft:realMode==="rush"?(o.kind==="level"?90:120):null,tick:null,lastFlip:-1,hints:{},picking:false,locked:new Set(),liar:{},found:[null,null]};
   if(twist==="starter")S.hints[0]=answer[0];
   if(twist==="locked"){const opts=[..."bcdfghjklmnpqrstvwxyz"].filter(ch=>!answer.includes(ch)&&!(answer2||"").includes(ch));for(let i=0;i<4&&opts.length;i++)S.locked.add(opts.splice(Math.floor(Math.random()*opts.length),1)[0]);}
@@ -803,12 +809,13 @@ function renderChrome(){
   else if(vs){const p=S.players[S.turn];$("gTitle").innerHTML='<span class="turnchip" style="background:var(--p'+(S.turn+1)+')">'+esc(p.name)+'</span>';$("gSub").textContent="Versus · round "+Math.min(S.R,p.guesses.length+1)+" of "+S.R;}
   else{$("gTitle").textContent=MODES[S.mode].name;$("gSub").textContent=((S.mode==="mystery"||S.mode==="daily"||S.mode==="lab")&&S.twist?TWISTS[S.twist].name+" · ":"")+S.len+" letters";}
   const l=$("lens");l.innerHTML="";
-  if(S.kind==="free"&&S.mode!=="mystery"&&S.mode!=="classic"){l.innerHTML='<span class="lbl">Letters</span>';
+  if(S.kind==="free"&&S.mode!=="mystery"&&S.mode!=="classic"&&S.mode!=="daily"&&S.twist!=="theme"){l.innerHTML='<span class="lbl">Letters</span>';
     for(let n=3;n<=7;n++){const b=document.createElement("button");b.className="len";b.textContent=n;b.setAttribute("aria-pressed",S.len===n);
-      b.onclick=()=>{pref.len=n;save.pref();startFree(S.mode);};l.appendChild(b);}}
+      b.onclick=()=>{pref.len=n;save.pref();startFree(S.mode,S.mode==="lab"?S.twist:undefined);};l.appendChild(b);}}
   let h=S.kind==="free"?MODES[S.mode].hint:"Fewer guesses earn more stars. New levels give 3 coins.";
-  if(S.twist&&(S.kind!=="free"||S.mode==="mystery"||!MODES[S.twist]))h=TWISTS[S.twist].icon+" "+TWISTS[S.twist].name+": "+TWISTS[S.twist].desc+(S.kind==="level"?" Worth 3 coins.":"");
+  if(S.twist&&(S.kind!=="free"||S.mode==="mystery"||!MODES[S.twist]))h=TWISTS[S.twist].icon+" "+TWISTS[S.twist].name+": "+TWISTS[S.twist].desc+(S.kind==="level"?" Worth 6 coins.":"");
   if(S.realMode==="veiled")h+=" Veil shape: "+S.shape+".";
+  else if(S.lightVeil)h=(S.twist?h+" ":"")+"🎭 The veil hides "+S.lightVeil+". Red squares show the letter, not the clue."+(S.twist?"":" Fewer guesses earn more stars.");
   if(S.twist==="theme")h="🏷️ Theme Word. Category: "+S.category+". You have 5 guesses.";
   if(vs)h="Only "+S.players[S.turn].name+" should look. Pass the phone after your guess.";
   if(S.picking)h="Tap a square in your current row to reveal its letter.";
@@ -995,7 +1002,7 @@ function showVersusResult(){
 function showHelp(){
   $("panel").innerHTML='<h2>How to play</h2><p>Guess the secret word. Every guess must be a real word, and the colors show how close you are.</p>'+
   '<div class="legend"><span><i class="sw" style="background:var(--hit)"></i>Right spot</span><span><i class="sw" style="background:var(--near)"></i>In word, wrong spot</span><span><i class="sw" style="background:var(--miss)"></i>Not in word</span><span><i class="sw" style="background:var(--veil)"></i>Veil</span></div>'+
-  '<ul class="mlist"><li><b>Twist Voyage</b><span>1,000 levels of 5-letter words in worlds of 10. Words get harder as you go. Fewer guesses earn more stars, and each new level gives 3 coins.</span></li>'+
+  '<ul class="mlist"><li><b>The veil</b><span>On every voyage level the red veil hides some squares: you see the letter you typed, not its color. Early levels veil one square on every other row; later worlds veil more.</span></li><li><b>Twist Voyage</b><span>1,000 levels of 5-letter words in worlds of 10. Words get harder as you go. Fewer guesses earn more stars, and each new level gives 3 coins.</span></li>'+
   '<li><b>Twist levels</b><span>From level 4, every other level changes the rules and pays 6 coins. Each world unlocks new twists: '+TW_ORDER.map(k=>TWISTS[k].name).join(", ")+'.</span></li>'+
   '<li><b>Word Ladders</b><span>The same voyage with 3, 4, 6 and 7-letter words.</span></li>'+
   '<li><b>Endless Classic</b><span>Random 5-letter words with no levels, never repeated.</span></li>'+
