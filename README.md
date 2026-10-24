@@ -14,6 +14,7 @@ Play them all: https://retafos.github.io/playable-games/
 | [Bounty Tides](bounty-tides/) | Card battler | Deck building, 10-island voyages that loop harder, market, bounties |
 | [Snowball Run](snowball-run/) | Runner | Endless levels, coins, upgrades shop, 6 skins, 4 themes |
 | [Army Run](army-run/) | Crowd runner | Endless levels, enemy squads, stair multipliers, upgrades |
+| [Mirage Heroes](mirage-heroes/) | Idle RPG | 60 heroes, 20 mines, 600+ upgrades, pets, mounts, wishes, offline progress |
 | [Hero Survivors](hero-survivors/) | Survivors / action | 9 power-ups, boss, endless stages |
 | [Burger Boss](burger-boss/) | Idle tycoon | Upgrades, chefs, counters, saved progress |
 | [Slime Eater](slime-eater/) | Growth / io | Endless houses with rising goals |
